@@ -1,5 +1,6 @@
 const std = @import("std");
 const Token = @import("types.zig").Token;
+const report = @import("report.zig");
 
 const This = @This();
 
@@ -177,32 +178,11 @@ fn newLine(this: *This) Token {
 }
 
 fn err(this: *This) void {
-    this.reportError();
+    const line, const column = this.currentLineAndCol();
+    report.unexpectedToken(line, this.line_num, column);
     // don't generate tokens for the current line
     this.deleteCurrentTokenLine();
     this.advanceUntill('\n');
-}
-
-fn reportError(this: This) void {
-    //TODO: refactor
-    const line, const col = this.currentLineAndCol();
-    std.log.err("unknown token '{c}' at line {}, column {}", .{ line[col], this.line_num + 1, col + 1 });
-    std.debug.print("\t{s}\n\t", .{line});
-    for (line[0..col]) |c| {
-        if (c == '\t') {
-            std.debug.print("\t", .{});
-        } else {
-            std.debug.print(" ", .{});
-        }
-    }
-    std.debug.print("^", .{});
-    for (line[col + 1 ..]) |c| {
-        if (!std.ascii.isAlphanumeric(c)) {
-            break;
-        }
-        std.debug.print("~", .{});
-    }
-    std.debug.print("\n", .{});
 }
 
 fn currentLineAndCol(this: This) struct { []const u8, usize } {
