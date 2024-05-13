@@ -186,14 +186,14 @@ fn newLine(this: *This) Token {
 }
 
 fn err(this: *This) void {
-    const line, const column = this.currentLineAndCol();
+    const line, const column = this.tokenLineAndCol();
     report.unexpectedToken(line, this.line_num, column);
     this.deleteCurrentTokenLine();
     this.consumeUntill('\n');
     this.addToken(.{ .err_line = line });
 }
 
-fn currentLineAndCol(this: This) struct { []const u8, usize } {
+fn tokenLineAndCol(this: This) struct { []const u8, usize } {
     var line_start = this.next;
     while (line_start - 1 > 0 and this.text[line_start - 1] != '\n') : (line_start -= 1) {}
     var line_end = this.next;
