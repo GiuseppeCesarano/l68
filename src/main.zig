@@ -15,7 +15,10 @@ pub fn main() void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const file = std.fs.cwd().readFileAlloc(allocator, getFirstArg(allocator), 1000) catch @panic("could not read file");
+    const path = getFirstArg(allocator);
+    const file_stats = std.fs.cwd().statFile(path) catch @panic("could not read file stats");
+
+    const file = std.fs.cwd().readFileAlloc(allocator, path, file_stats.size) catch @panic("could not read file");
     defer allocator.free(file);
 
     var scanner = Scanner.init(file, allocator);
