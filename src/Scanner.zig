@@ -47,11 +47,12 @@ fn scanToken(this: *This) void {
     const token: ?Token = switch (char) {
         ',' => .comma,
         '(' => .left_parentheses,
-        '-' => if (this.advanceIfEql('(')) .minus_left_parentheses else null,
-        ')' => if (this.advanceIfEql('+')) .right_parentheses_plus else .right_parentheses,
-        '.' => this.dot(),
+        '-' => if (this.consumeIfEql('(')) .minus_left_parentheses else null,
+        ')' => if (this.consumeIfEql('+')) .right_parentheses_plus else .right_parentheses,
+        '.' => this.size(),
         '#' => this.number(),
         '$' => this.ram(),
+        ';' => this.comment(),
         'a'...'z', 'A'...'Z' => this.identifier(),
         '\'' => this.string(),
         '0'...'9' => this.ram(),
@@ -77,14 +78,16 @@ fn addToken(this: *This, token: Token) void {
     this.tokens.append(token) catch @panic("error"); //TODO: don't silent fail.
 }
 
-fn advanceIfEql(this: *This, expected: u8) bool {
-    const advance = this.next < this.text.len and this.text[this.next] == expected;
-    this.next += @intFromBool(advance);
-    return advance;
+fn consumeIfEql(this: *This, expected: u8) bool {
+    const is_match = this.next < this.text.len and this.text[this.next] == expected;
+    this.next += @intFromBool(is_match);
+    return is_match;
 }
 
-fn dot(this: *This) ?Token {
-    return switch (this.consume()) {
+fn size(this: *This) ?Token {
+    this.consumeUntillNotIdentifier();
+    if (this.next - this.start != 2) return null;
+    return switch (this.text[this.start + 1]) {
         'b', 'B' => .byte_size,
         'w', 'W' => .word_size,
         'l', 'L' => .long_size,
@@ -93,9 +96,9 @@ fn dot(this: *This) ?Token {
 }
 
 fn number(this: *This) ?Token {
-    const has_leading_dollar = this.advanceIfEql('$');
-    _ = this.advanceIfEql('-');
-    this.advanceUntillNotDigit();
+    const has_leading_dollar = this.consumeIfEql('$');
+    _ = this.consumeIfEql('-');
+    if (has_leading_dollar) this.consumeUntillNotIdentifier() else this.consumeUntillNotDigit();
     const string_number = this.text[this.start + @intFromBool(has_leading_dollar) + 1 .. this.next];
     return .{
         .number = .{
@@ -107,7 +110,7 @@ fn number(this: *This) ?Token {
 
 fn ram(this: *This) ?Token {
     const has_leading_dollar = this.text[this.start] == '$';
-    this.advanceUntillNotDigit();
+    if (has_leading_dollar) this.consumeUntillNotIdentifier() else this.consumeUntillNotDigit();
     const string_number = this.text[this.start + @intFromBool(has_leading_dollar) .. this.next];
     return .{
         .ram = .{
@@ -117,7 +120,7 @@ fn ram(this: *This) ?Token {
     };
 }
 
-fn advanceUntillNotDigit(this: *This) void {
+fn consumeUntillNotDigit(this: *This) void {
     while (std.ascii.isDigit(this.peek())) {
         _ = this.consume();
     }
@@ -127,14 +130,25 @@ fn peek(this: This) u8 {
     return if (this.next < this.text.len) this.text[this.next] else 0;
 }
 
+fn comment(this: *This) Token {
+    this.consumeUntill('\n');
+    return .{ .comment = this.text[this.start..this.next] };
+}
+
+fn consumeUntill(this: *This, char: u8) void {
+    while (this.next < this.text.len and this.peek() != char) {
+        _ = this.consume();
+    }
+}
+
 fn identifier(this: *This) Token {
-    this.advanceUntillNotAlphanumeric();
+    this.consumeUntillNotIdentifier();
     const str = this.text[this.start..this.next];
     return this.register() orelse mnemonic_map.get(this.toLower(str)) orelse .{ .label = str };
 }
 
-fn advanceUntillNotAlphanumeric(this: *This) void {
-    while (std.ascii.isAlphanumeric(this.peek())) {
+fn consumeUntillNotIdentifier(this: *This) void {
+    while (std.ascii.isAlphanumeric(this.peek()) or this.peek() == '_') {
         _ = this.consume();
     }
 }
@@ -161,15 +175,9 @@ fn toLower(this: *This, str: []const u8) []u8 {
 }
 
 fn string(this: *This) Token {
-    this.advanceUntill('\'');
+    this.consumeUntill('\'');
     const str = this.text[this.start..this.next];
     return if (str.len == 1) .{ .char = str[0] } else .{ .string = str };
-}
-
-fn advanceUntill(this: *This, char: u8) void {
-    while (this.next < this.text.len and this.peek() != char) {
-        _ = this.consume();
-    }
 }
 
 fn newLine(this: *This) Token {
@@ -180,9 +188,9 @@ fn newLine(this: *This) Token {
 fn err(this: *This) void {
     const line, const column = this.currentLineAndCol();
     report.unexpectedToken(line, this.line_num, column);
-    // don't generate tokens for the current line
     this.deleteCurrentTokenLine();
-    this.advanceUntill('\n');
+    this.consumeUntill('\n');
+    this.addToken(.{ .err_line = line });
 }
 
 fn currentLineAndCol(this: This) struct { []const u8, usize } {
@@ -190,7 +198,7 @@ fn currentLineAndCol(this: This) struct { []const u8, usize } {
     while (line_start - 1 > 0 and this.text[line_start - 1] != '\n') : (line_start -= 1) {}
     var line_end = this.next;
     while (this.text[line_end] != '\n' and line_end < this.text.len) : (line_end += 1) {}
-    return .{ this.text[line_start..line_end], this.next - line_start - 1 };
+    return .{ this.text[line_start..line_end], this.start - line_start };
 }
 
 fn deleteCurrentTokenLine(this: *This) void {

@@ -9,6 +9,8 @@ pub const Token = union(enum(u8)) {
     ram: struct { location: u32, is_hex: bool },
     char: u8,
     string: []const u8,
+    err_line: []const u8,
+    comment: []const u8,
 
     // Single charchater tokens
     comma,
