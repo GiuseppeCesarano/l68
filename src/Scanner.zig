@@ -16,11 +16,9 @@ buffer: std.ArrayList(u8), //TODO: Refactor if possible.
 const mnemonic_map = std.ComptimeStringMap(Token, kvs_list: {
     const mnemonics = Token.mnemonics();
     var list: [mnemonics.len]struct { []const u8, Token } = undefined;
-
     for (&list, mnemonics) |*elm, mnemonic| {
         elm.* = @TypeOf(list[0]){ mnemonic.name, @unionInit(Token, mnemonic.name, {}) };
     }
-
     break :kvs_list list;
 });
 
@@ -38,7 +36,6 @@ pub fn scanTokens(this: *This) @TypeOf(this.tokens) {
         this.start = this.next;
         this.scanToken();
     }
-
     return this.tokens;
 }
 
@@ -60,7 +57,6 @@ fn scanToken(this: *This) void {
         ' ', '\t', '\r' => return,
         else => null,
     };
-
     if (token) |tk| {
         this.addToken(tk);
     } else {
