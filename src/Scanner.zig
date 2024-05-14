@@ -7,9 +7,9 @@ const This = @This();
 text: []const u8,
 tokens: std.ArrayList(Token),
 
-line_num: usize = 0,
-next: usize = 0,
-start: usize = 0,
+line_num: u32 = 0,
+next: u32 = 0,
+start: u32 = 0,
 
 buffer: std.ArrayList(u8), //TODO: Refactor if possible.
 
