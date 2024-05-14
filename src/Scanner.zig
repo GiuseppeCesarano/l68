@@ -155,10 +155,11 @@ fn consumeUntillNotIdentifier(this: *This) void {
 
 fn tryRegister(this: *This) ?Token {
     const str = this.text[this.start..this.next];
-    if (str.len != 2 or !std.ascii.isDigit(str[1])) return null;
+    const register_number = std.fmt.parseInt(u8, str[1..1], 10) catch return null;
+    if (str.len != 2 or register_number > 7) return null;
     return switch (str[0]) {
-        'D', 'd' => .{ .data_register = str[1] - '0' },
-        'A', 'a' => .{ .address_register = str[1] - '0' },
+        'D', 'd' => .{ .data_register = register_number },
+        'A', 'a' => .{ .address_register = register_number },
         else => null,
     };
 }
