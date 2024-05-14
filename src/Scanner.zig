@@ -51,11 +51,11 @@ fn scanToken(this: *This) void {
         ')' => if (this.consumeIfEql('+')) .right_parentheses_plus else .right_parentheses,
         '.' => this.size(),
         '#' => this.number(),
-        '$' => this.ram(),
+        '$' => this.mem(),
         ';' => this.comment(),
-        'a'...'z', 'A'...'Z' => this.identifier(),
+        'a'...'z', 'A'...'Z' => this.registerMenmonicLabel(),
         '\'' => this.string(),
-        '0'...'9' => this.ram(),
+        '0'...'9' => this.mem(),
         '\n' => this.newLine(),
         ' ', '\t', '\r' => return,
         else => null,
@@ -108,7 +108,7 @@ fn number(this: *This) ?Token {
     };
 }
 
-fn ram(this: *This) ?Token {
+fn mem(this: *This) ?Token {
     const has_leading_dollar = this.text[this.start] == '$';
     if (has_leading_dollar) this.consumeUntillNotIdentifier() else this.consumeUntillNotDigit();
     const string_number = this.text[this.start + @intFromBool(has_leading_dollar) .. this.next];
@@ -141,10 +141,10 @@ fn consumeUntill(this: *This, char: u8) void {
     }
 }
 
-fn identifier(this: *This) Token {
+fn registerMenmonicLabel(this: *This) Token {
     this.consumeUntillNotIdentifier();
     const str = this.text[this.start..this.next];
-    return this.register() orelse mnemonic_map.get(this.toLower(str)) orelse .{ .label = str };
+    return this.tryRegister() orelse mnemonic_map.get(this.toLower(str)) orelse .{ .label = str };
 }
 
 fn consumeUntillNotIdentifier(this: *This) void {
@@ -153,7 +153,7 @@ fn consumeUntillNotIdentifier(this: *This) void {
     }
 }
 
-fn register(this: *This) ?Token {
+fn tryRegister(this: *This) ?Token {
     const str = this.text[this.start..this.next];
     if (str.len != 2 or !std.ascii.isDigit(str[1])) return null;
     return switch (str[0]) {
