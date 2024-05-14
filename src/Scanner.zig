@@ -60,7 +60,7 @@ fn scanToken(this: *This) void {
     if (token) |tk| {
         this.addToken(tk);
     } else {
-        this.err();
+        this.unknownToken();
     }
 }
 
@@ -182,7 +182,7 @@ fn newLine(this: *This) Token {
     return .{ .new_line = {} };
 }
 
-fn err(this: *This) void {
+fn unknownToken(this: *This) void {
     const line, const column = this.tokenLineAndCol();
     report.unexpectedToken(line, this.line_num, column);
     this.deleteCurrentTokenLine();
