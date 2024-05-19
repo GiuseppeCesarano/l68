@@ -51,8 +51,8 @@ fn scanToken(this: *This) void {
         '#' => this.immediate(),
         '$', '%', '@' => this.mem(),
         ';' => this.comment(),
-        'a'...'z', 'A'...'Z' => this.registerMenmonicLabel(),
-        '\'' => this.string(),
+        'a'...'z', 'A'...'Z' => this.registerOrMenmonicOrLabel(),
+        '\'' => this.stringOrChar(),
         '0'...'9' => this.mem(),
         '\n' => this.newLine(),
         ' ', '\t', '\r' => return,
@@ -71,10 +71,6 @@ inline fn consume(this: *This) u8 {
     return char;
 }
 
-fn addToken(this: *This, token: Token) void {
-    this.tokens.append(token) catch @panic("error"); //TODO: don't silent fail.
-}
-
 fn consumeIfEql(this: *This, expected: u8) bool {
     const is_match = this.next < this.text.len and this.text[this.next] == expected;
     this.next += @intFromBool(is_match);
@@ -90,6 +86,16 @@ fn size(this: *This) ?Token {
         'l', 'L' => .long_size,
         else => null,
     };
+}
+
+fn consumeUntillNotIdentifier(this: *This) void {
+    while (std.ascii.isAlphanumeric(this.peek()) or this.peek() == '_') {
+        _ = this.consume();
+    }
+}
+
+fn peek(this: This) u8 {
+    return if (this.next < this.text.len) this.text[this.next] else 0;
 }
 
 fn immediate(this: *This) ?Token {
@@ -115,12 +121,6 @@ fn consumeIfNumberBase(this: *This) ?NumberBase {
     };
 }
 
-fn mem(this: *This) ?Token {
-    this.next = this.next - 1;
-    const value, const base = this.number() orelse return null;
-    return if (value >= 0) .{ .mem = .{ .location = @intCast(value), .base = base } } else null;
-}
-
 fn consumeUntillNotDigit(this: *This) void {
     var c = this.peek();
     while (isDigit(c)) : (c = this.peek()) {
@@ -132,8 +132,10 @@ fn isDigit(c: u8) bool {
     return std.ascii.isDigit(c) or (c >= 'A' and c <= 'F') or (c >= 'a' and c <= 'f') or c == '-' or c == '+';
 }
 
-fn peek(this: This) u8 {
-    return if (this.next < this.text.len) this.text[this.next] else 0;
+fn mem(this: *This) ?Token {
+    this.next = this.next - 1;
+    const value, const base = this.number() orelse return null;
+    return if (value >= 0) .{ .mem = .{ .location = @intCast(value), .base = base } } else null;
 }
 
 fn comment(this: *This) Token {
@@ -147,16 +149,10 @@ fn consumeUntill(this: *This, char: u8) void {
     }
 }
 
-fn registerMenmonicLabel(this: *This) Token {
+fn registerOrMenmonicOrLabel(this: *This) Token {
     this.consumeUntillNotIdentifier();
     const str = this.text[this.start..this.next];
     return this.tryRegister() orelse mnemonic_map.get(this.toLower(str)) orelse .{ .label = str };
-}
-
-fn consumeUntillNotIdentifier(this: *This) void {
-    while (std.ascii.isAlphanumeric(this.peek()) or this.peek() == '_') {
-        _ = this.consume();
-    }
 }
 
 fn tryRegister(this: *This) ?Token {
@@ -181,7 +177,7 @@ fn toLower(this: *This, str: []const u8) []u8 {
     return this.buffer.items[0..str.len];
 }
 
-fn string(this: *This) Token {
+fn stringOrChar(this: *This) Token {
     this.consumeUntill('\'');
     const str = this.text[this.start..this.next];
     return if (str.len == 1) .{ .char = str[0] } else .{ .string = str };
@@ -190,6 +186,10 @@ fn string(this: *This) Token {
 fn newLine(this: *This) Token {
     this.line_num += 1;
     return .{ .new_line = {} };
+}
+
+fn addToken(this: *This, token: Token) void {
+    this.tokens.append(token) catch @panic("error"); //TODO: don't silent fail.
 }
 
 fn unknownToken(this: *This) void {
