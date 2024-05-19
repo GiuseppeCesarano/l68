@@ -1,5 +1,6 @@
 const std = @import("std");
 const Token = @import("token.zig").Token;
+const NumberBase = @import("token.zig").NumberBase;
 const report = @import("report.zig");
 
 const This = @This();
@@ -44,11 +45,11 @@ fn scanToken(this: *This) void {
     const token: ?Token = switch (char) {
         ',' => .comma,
         '(' => .left_parentheses,
-        '-' => if (this.consumeIfEql('(')) .minus_left_parentheses else null,
+        '-' => if (this.consumeIfEql('(')) .minus_left_parentheses else this.immediate(), //TODO: handle correctly
         ')' => if (this.consumeIfEql('+')) .right_parentheses_plus else .right_parentheses,
         '.' => this.size(),
-        '#' => this.number(),
-        '$' => this.mem(),
+        '#' => this.immediate(),
+        '$', '%', '@' => this.mem(),
         ';' => this.comment(),
         'a'...'z', 'A'...'Z' => this.registerMenmonicLabel(),
         '\'' => this.string(),
@@ -91,35 +92,44 @@ fn size(this: *This) ?Token {
     };
 }
 
-fn number(this: *This) ?Token {
-    const has_leading_dollar = this.consumeIfEql('$');
-    _ = this.consumeIfEql('-');
-    if (has_leading_dollar) this.consumeUntillNotIdentifier() else this.consumeUntillNotDigit();
-    const string_number = this.text[this.start + @intFromBool(has_leading_dollar) + 1 .. this.next];
-    return .{
-        .number = .{
-            .value = std.fmt.parseInt(i64, string_number, if (has_leading_dollar) 16 else 10) catch return null,
-            .is_hex = has_leading_dollar,
-        },
+fn immediate(this: *This) ?Token {
+    const value, const base = this.number() orelse return null;
+    return .{ .immediate = .{ .value = value, .base = base } };
+}
+
+fn number(this: *This) ?struct { i64, NumberBase } {
+    const leading_number_base = this.consumeIfNumberBase();
+    const has_leading_hash = this.text[this.start] == '#';
+    this.consumeUntillNotDigit();
+    const string_number = this.text[this.start + @intFromBool(leading_number_base != null) + @intFromBool(has_leading_hash) .. this.next];
+    const base = @intFromEnum(leading_number_base orelse .decimal);
+    return .{ std.fmt.parseInt(i64, string_number, base) catch return null, leading_number_base orelse .decimal };
+}
+
+fn consumeIfNumberBase(this: *This) ?NumberBase {
+    return blk: {
+        if (NumberBase.fromChar(this.peek())) |base| {
+            _ = this.consume();
+            break :blk base;
+        } else |_| break :blk null;
     };
 }
 
 fn mem(this: *This) ?Token {
-    const has_leading_dollar = this.text[this.start] == '$';
-    if (has_leading_dollar) this.consumeUntillNotIdentifier() else this.consumeUntillNotDigit();
-    const string_number = this.text[this.start + @intFromBool(has_leading_dollar) .. this.next];
-    return .{
-        .ram = .{
-            .location = std.fmt.parseInt(u32, string_number, if (has_leading_dollar) 16 else 10) catch return null,
-            .is_hex = has_leading_dollar,
-        },
-    };
+    this.next = this.next - 1;
+    const value, const base = this.number() orelse return null;
+    return if (value >= 0) .{ .mem = .{ .location = @intCast(value), .base = base } } else null;
 }
 
 fn consumeUntillNotDigit(this: *This) void {
-    while (std.ascii.isDigit(this.peek())) {
+    var c = this.peek();
+    while (isDigit(c)) : (c = this.peek()) {
         _ = this.consume();
     }
+}
+
+fn isDigit(c: u8) bool {
+    return std.ascii.isDigit(c) or (c >= 'A' and c <= 'F') or (c >= 'a' and c <= 'f') or c == '-' or c == '+';
 }
 
 fn peek(this: This) u8 {

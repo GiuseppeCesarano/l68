@@ -1,12 +1,40 @@
 const std = @import("std");
 
+pub const NumberBase = enum(u8) {
+    const This = @This();
+
+    binary = 2,
+    octal = 8,
+    decimal = 10,
+    hexdecimal = 16,
+
+    pub fn fromChar(char: u8) !This {
+        return switch (char) {
+            '%' => .binary,
+            '@' => .octal,
+            ' ' => .decimal,
+            '$' => .hexdecimal,
+            else => error.InvalidCharacter,
+        };
+    }
+
+    pub fn toChar(base: This) u8 {
+        return switch (base) {
+            .binary => '%',
+            .octal => '@',
+            .decimal => ' ',
+            .hexdecimal => '$',
+        };
+    }
+};
+
 pub const Token = union(enum(u8)) {
     const This = @This();
 
     // Literals
     label: []const u8,
-    number: struct { value: i64, is_hex: bool },
-    ram: struct { location: u32, is_hex: bool },
+    immediate: struct { value: i64, base: NumberBase },
+    mem: struct { location: u32, base: NumberBase },
     char: u8,
     string: []const u8,
     err_line: []const u8,
