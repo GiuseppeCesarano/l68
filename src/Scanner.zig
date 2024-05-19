@@ -1,14 +1,14 @@
 const std = @import("std");
 const Token = @import("token.zig").Token;
 const NumberBase = @import("token.zig").NumberBase;
-const report = @import("report.zig");
 
 const This = @This();
 
 text: []const u8,
 tokens: std.ArrayList(Token),
+unknown_token_locations: std.ArrayList(u32),
 
-line_num: u32 = 0,
+line_count: u32 = 0,
 next: u32 = 0,
 start: u32 = 0,
 
@@ -24,20 +24,21 @@ const mnemonic_map = std.ComptimeStringMap(Token, kvs_list: {
 });
 
 pub fn init(text: []const u8, allocator: std.mem.Allocator) This {
-    return .{ .text = text, .tokens = std.ArrayList(Token).init(allocator), .buffer = std.ArrayList(u8).init(allocator) };
+    return .{ .text = text, .tokens = std.ArrayList(Token).init(allocator), .unknown_token_locations = std.ArrayList(u32).init(allocator), .buffer = std.ArrayList(u8).init(allocator) };
 }
 
 pub fn deinit(this: This) void {
     this.tokens.deinit();
+    this.unknown_token_locations.deinit();
     this.buffer.deinit();
 }
 
-pub fn scanTokens(this: *This) @TypeOf(this.tokens) {
+pub fn scanTokens(this: *This) struct { @TypeOf(this.tokens.items), ?@TypeOf(this.unknown_token_locations.items) } {
     while (this.next != this.text.len) {
         this.start = this.next;
         this.scanToken();
     }
-    return this.tokens;
+    return .{ this.tokens.items, if (this.unknown_token_locations.items.len != 0) this.unknown_token_locations.items else null };
 }
 
 fn scanToken(this: *This) void {
@@ -59,9 +60,9 @@ fn scanToken(this: *This) void {
         else => null,
     };
     if (token) |tk| {
-        this.addToken(tk);
+        this.tokens.append(tk) catch @panic("error"); //TODO: don't silent fail.
     } else {
-        this.unknownToken();
+        this.unknown_token_locations.append(this.start) catch @panic("error"); //TODO: don't panic
     }
 }
 
@@ -184,33 +185,6 @@ fn stringOrChar(this: *This) Token {
 }
 
 fn newLine(this: *This) Token {
-    this.line_num += 1;
-    return .{ .new_line = {} };
-}
-
-fn addToken(this: *This, token: Token) void {
-    this.tokens.append(token) catch @panic("error"); //TODO: don't silent fail.
-}
-
-fn unknownToken(this: *This) void {
-    const line, const column = this.tokenLineAndCol();
-    report.unexpectedToken(line, this.line_num, column);
-    this.deleteCurrentTokenLine();
-    this.consumeUntill('\n');
-    this.addToken(.{ .err_line = line });
-}
-
-fn tokenLineAndCol(this: This) struct { []const u8, usize } {
-    var line_start = this.next;
-    while (line_start - 1 > 0 and this.text[line_start - 1] != '\n') : (line_start -= 1) {}
-    var line_end = this.next;
-    while (this.text[line_end] != '\n' and line_end < this.text.len) : (line_end += 1) {}
-    return .{ this.text[line_start..line_end], this.start - line_start };
-}
-
-fn deleteCurrentTokenLine(this: *This) void {
-    var token = this.tokens.getLastOrNull();
-    while (token != null and token.? != .new_line) : (token = this.tokens.getLastOrNull()) {
-        _ = this.tokens.pop();
-    }
+    this.line_count += 1;
+    return .new_line;
 }

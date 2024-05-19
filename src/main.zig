@@ -1,5 +1,6 @@
 const std = @import("std");
 const Scanner = @import("Scanner.zig");
+const Reporter = @import("Reporter.zig");
 
 fn getFirstArg(allocator: std.mem.Allocator) [:0]const u8 {
     var args_it = std.process.argsWithAllocator(allocator) catch @panic("error: Could not allocate memory to parse arguments.");
@@ -24,11 +25,14 @@ pub fn main() void {
     var scanner = Scanner.init(file, allocator);
     defer scanner.deinit();
 
-    const tokens = scanner.scanTokens();
-    for (tokens.items) |value| {
-        switch (value) {
-            .new_line => std.debug.print("\n", .{}),
-            else => std.debug.print("{s} ", .{@tagName(value)}),
+    _, const errors = scanner.scanTokens();
+
+    const reporter = Reporter.init(file, allocator, scanner.line_count);
+    defer reporter.deinit();
+
+    if (errors) |errs| {
+        for (errs) |err| {
+            reporter.reportUnexpectedToken(err);
         }
     }
 }

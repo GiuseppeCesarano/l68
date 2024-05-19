@@ -37,7 +37,6 @@ pub const Token = union(enum(u8)) {
     mem: struct { location: u32, base: NumberBase },
     char: u8,
     string: []const u8,
-    err_line: []const u8,
     comment: []const u8,
 
     // Single charchater tokens
