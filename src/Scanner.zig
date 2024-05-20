@@ -50,11 +50,11 @@ fn scanToken(this: *This) void {
         ')' => if (this.consumeIfEql('+')) .right_parentheses_plus else .right_parentheses,
         '.' => this.size(),
         '#' => this.immediate(),
-        '$', '%', '@' => this.mem(),
+        '$', '%', '@' => this.absolute(),
         ';' => this.comment(),
         'a'...'z', 'A'...'Z' => this.registerOrMenmonicOrLabel(),
         '\'' => this.stringOrChar(),
-        '0'...'9' => this.mem(),
+        '0'...'9' => this.absolute(),
         '\n' => this.newLine(),
         ' ', '\t', '\r' => return,
         else => null,
@@ -105,12 +105,12 @@ fn immediate(this: *This) ?Token {
 }
 
 fn number(this: *This) ?struct { i64, NumberBase } {
-    const leading_number_base = this.consumeIfNumberBase();
+    const number_base = this.consumeIfNumberBase() orelse .decimal;
     const has_leading_hash = this.text[this.start] == '#';
     this.consumeUntillNotDigit();
-    const string_number = this.text[this.start + @intFromBool(leading_number_base != null) + @intFromBool(has_leading_hash) .. this.next];
-    const base = @intFromEnum(leading_number_base orelse .decimal);
-    return .{ std.fmt.parseInt(i64, string_number, base) catch return null, leading_number_base orelse .decimal };
+    const string_number = this.text[this.start + @intFromBool(number_base != .decimal) + @intFromBool(has_leading_hash) .. this.next];
+    const base = @intFromEnum(number_base);
+    return .{ std.fmt.parseInt(i64, string_number, base) catch return null, number_base };
 }
 
 fn consumeIfNumberBase(this: *This) ?NumberBase {
@@ -133,10 +133,10 @@ fn isDigit(c: u8) bool {
     return std.ascii.isDigit(c) or (c >= 'A' and c <= 'F') or (c >= 'a' and c <= 'f') or c == '-' or c == '+';
 }
 
-fn mem(this: *This) ?Token {
+fn absolute(this: *This) ?Token {
     this.next = this.next - 1;
     const value, const base = this.number() orelse return null;
-    return if (value >= 0) .{ .mem = .{ .location = @intCast(value), .base = base } } else null;
+    return if (value >= 0) .{ .absolute = .{ .location = @intCast(value), .base = base } } else null;
 }
 
 fn comment(this: *This) Token {

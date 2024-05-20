@@ -34,7 +34,7 @@ pub const Token = union(enum(u8)) {
     // Literals
     label: []const u8,
     immediate: struct { value: i64, base: NumberBase },
-    mem: struct { location: u32, base: NumberBase },
+    absolute: struct { location: u32, base: NumberBase },
     char: u8,
     string: []const u8,
     comment: []const u8,
