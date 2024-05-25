@@ -142,9 +142,6 @@ pub const Token = union(enum(u8)) {
     }
 
     pub fn mnemonics() []const std.builtin.Type.EnumField {
-        const first = @intFromEnum(Types().abcd);
-        const last = @intFromEnum(Types().unlk);
-
-        return @typeInfo(Types()).Enum.fields[first..last];
+        return @typeInfo(Types()).Enum.fields[@intFromEnum(Types().abcd)..];
     }
 };
