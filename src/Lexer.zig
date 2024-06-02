@@ -140,7 +140,8 @@ fn immediate(this: *This) void {
     const is_negative = this.skipIfEql('-');
     const base = this.consumeIfBase();
     this.skipUntillDelimiter();
-    const str = this.text[this.token_start_postion + 1 + @intFromBool(is_negative) + @intFromBool(base != 10 and base != null) .. this.position];
+    const offset: usize = 1 + @as(usize, @intFromBool(is_negative)) + @intFromBool(base != 10 and base != null);
+    const str = this.text[this.token_start_postion + offset .. this.position];
     if (base) |b| {
         if (std.fmt.parseInt(i64, str, b)) |value| {
             this.addToken(.{ .immediate = value * @as(i64, if (is_negative) -1 else 1) });

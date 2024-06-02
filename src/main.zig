@@ -10,18 +10,17 @@ fn getFirstArg(allocator: std.mem.Allocator) [:0]const u8 {
     return args_it.next() orelse @panic("error: a file path is needed as first argument.");
 }
 
-pub fn main() void {
+pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const path = getFirstArg(allocator);
-    const file_stats = std.fs.cwd().statFile(path) catch @panic("could not read file stats");
+    const file = try std.fs.cwd().openFile(getFirstArg(allocator), .{ .mode = .read_only });
+    defer file.close();
+    const file_stat = try file.stat();
+    const file_content = try std.posix.mmap(null, file_stat.size, std.posix.PROT.READ, .{ .TYPE = .PRIVATE, .NONBLOCK = true }, file.handle, 0);
 
-    const file = std.fs.cwd().readFileAlloc(allocator, path, file_stats.size) catch @panic("could not read file");
-    defer allocator.free(file);
-
-    var scanner = Lexer.init(file, allocator);
+    var scanner = Lexer.init(file_content, allocator);
     defer scanner.deinit();
     const tokens = scanner.scanTokens();
 
