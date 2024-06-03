@@ -40,7 +40,7 @@ const scan_map = map: {
             '#' => immediate,
             '$', '%', '@' => absolute,
             ';' => comment,
-            'a'...'z', 'A'...'Z' => registerOrMenmonicOrLabel,
+            'a'...'z', 'A'...'Z' => registerOrMnemonicOrLabel,
             '\'' => stringOrChar,
             '0'...'9' => absolute,
             else => noop,
@@ -120,20 +120,16 @@ fn size(this: *This) void {
     this.skipUntillDelimiter();
     const str = this.text[this.token_start_postion..this.position];
     if (str.len != 2) @panic("report error");
-    switch (str[1]) {
-        'b', 'B' => this.addToken(.byte_size),
-        'w', 'W' => this.addToken(.word_size),
-        'l', 'L' => this.addToken(.long_size),
+    switch (str[1] | 0b00100000) {
+        'b' => this.addToken(.byte_size),
+        'w' => this.addToken(.word_size),
+        'l' => this.addToken(.long_size),
         else => @panic("report error"), // TODO report error to user
     }
 }
 
-inline fn peekPlusOffset(this: This, offset: u32) u8 {
-    return if (this.position + offset < this.text.len) this.text[this.position + offset] else 0;
-}
-
 inline fn peek(this: This) u8 {
-    return this.peekPlusOffset(0);
+    return if (this.position != this.text.len) this.text[this.position] else 0;
 }
 
 fn immediate(this: *This) void {
@@ -143,7 +139,7 @@ fn immediate(this: *This) void {
     const offset: usize = 1 + @as(usize, @intFromBool(is_negative)) + @intFromBool(base != 10 and base != null);
     const str = this.text[this.token_start_postion + offset .. this.position];
     if (base) |b| {
-        if (std.fmt.parseInt(i64, str, b)) |value| {
+        if (std.fmt.parseUnsigned(i64, str, b)) |value| {
             this.addToken(.{ .immediate = value * @as(i64, if (is_negative) -1 else 1) });
         } else |_| @panic("report error"); //TODO report
     } else this.addToken(.{ .immediate_label = str });
@@ -198,7 +194,7 @@ fn absolute(this: *This) void {
     };
     this.skipUntillDelimiter();
     const str = this.text[this.token_start_postion + @intFromBool(base != 10) .. this.position];
-    if (std.fmt.parseInt(u32, str, base)) |value| {
+    if (std.fmt.parseUnsigned(u32, str, base)) |value| {
         this.addToken(.{ .absolute = value });
     } else |_| @panic("report error"); //TODO report error
 }
@@ -208,38 +204,33 @@ fn comment(this: *This) void {
     this.newLine();
 }
 
-fn registerOrMenmonicOrLabel(this: *This) void {
+fn registerOrMnemonicOrLabel(this: *This) void {
     this.skipUntillDelimiter();
     const str = this.text[this.token_start_postion..this.position];
     this.addToken(parseRegister(str) orelse parseMnemonic(str) orelse .{ .label = str });
 }
 
 fn parseRegister(str: []const u8) ?Token {
-    if (str.len != 2) {
-        return null;
-    }
-    const num = std.fmt.parseInt(u8, str[1..], 10) catch return null;
-    return switch (str[0]) {
-        'D', 'd' => .{ .data_register = num },
-        'A', 'a' => .{ .address_register = num },
-        else => return null,
+    if (str.len != 2) return null;
+    const num = std.fmt.parseUnsigned(u8, str[1..], 10) catch return null;
+    return switch (str[0] | 0b00100000) {
+        'd' => .{ .data_register = num },
+        'a' => .{ .address_register = num },
+        else => null,
     };
 }
 
 fn parseMnemonic(str: []const u8) ?Token {
     const max_len = mnemonics_map.kvs[mnemonics_map.kvs.len - 1].key.len;
-    if (str.len > max_len) {
-        return null;
-    }
+    if (str.len > max_len) return null;
     var lowercase_str: [max_len]u8 = undefined;
-    toLower(&lowercase_str, str);
+    toLower(lowercase_str[0..str.len], str);
     return mnemonics_map.get(lowercase_str[0..str.len]);
 }
 
 fn toLower(dest: []u8, str: []const u8) void {
-    std.mem.copyForwards(u8, dest, str);
-    for (dest) |*c| {
-        c.* |= 0b00100000;
+    for (dest, str) |*dest_char, surce_char| {
+        dest_char.* = surce_char | 0b00100000;
     }
 }
 
