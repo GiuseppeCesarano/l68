@@ -15,17 +15,22 @@ line_number: u32 = 0,
 line_start_postion: u32 = 0,
 position: u32 = 0,
 
-const mnemonics_map = std.ComptimeStringMap(Token, kvs_list: {
-    const mnemonics = Token.mnemonics();
-    var list: [mnemonics.len]struct { []const u8, Token } = undefined;
-    for (&list, mnemonics) |*elm, mnemonic| {
-        elm.* = @TypeOf(list[0]){ mnemonic.name, @unionInit(Token, mnemonic.name, {}) };
+const mnemonics_map = @import("token.zig").mnemonics_map;
+const not_delimiter_map = blk: {
+    const len = std.math.maxInt(u8) + 1;
+    var bitset = std.bit_set.StaticBitSet(len).initEmpty();
+    for (0..len) |index| {
+        @setEvalBranchQuota(5000);
+        bitset.setValue(index, switch (index) {
+            'a'...'z', 'A'...'Z', '0'...'9', '_' => true,
+            else => false,
+        });
     }
-    break :kvs_list list;
-});
+    break :blk bitset;
+};
 
 const scan_map = map: {
-    var kvs: [256]*const fn (*This) void = undefined;
+    var kvs: [std.math.maxInt(u8) + 1]*const fn (*This) void = undefined;
     for (&kvs, 0..) |*value, key| {
         value.* = switch (key) {
             ',' => comma,
@@ -165,7 +170,7 @@ fn consumeIfBase(this: *This) ?u8 {
             this.skip();
             return 8;
         },
-        ' ', '0'...'9' => {
+        '0'...'9' => {
             this.skip();
             return 10;
         },
@@ -178,11 +183,8 @@ fn consumeIfBase(this: *This) ?u8 {
 }
 
 fn skipUntillDelimiter(this: *This) void {
-    while (this.position != this.text.len) {
-        switch (this.peek()) {
-            'a'...'z', 'A'...'Z', '0'...'9', '_' => this.skip(),
-            else => break,
-        }
+    while (not_delimiter_map.isSet(this.peek())) {
+        this.skip();
     }
 }
 
@@ -207,7 +209,7 @@ fn comment(this: *This) void {
 fn registerOrMnemonicOrLabel(this: *This) void {
     this.skipUntillDelimiter();
     const str = this.text[this.token_start_postion..this.position];
-    this.addToken(parseRegister(str) orelse parseMnemonic(str) orelse .{ .label = str });
+    this.addToken(parseRegister(str) orelse mnemonics_map.get(str) orelse .{ .label = str });
 }
 
 fn parseRegister(str: []const u8) ?Token {
@@ -218,20 +220,6 @@ fn parseRegister(str: []const u8) ?Token {
         'a' => .{ .address_register = num },
         else => null,
     };
-}
-
-fn parseMnemonic(str: []const u8) ?Token {
-    const max_len = mnemonics_map.kvs[mnemonics_map.kvs.len - 1].key.len;
-    if (str.len > max_len) return null;
-    var lowercase_str: [max_len]u8 = undefined;
-    toLower(lowercase_str[0..str.len], str);
-    return mnemonics_map.get(lowercase_str[0..str.len]);
-}
-
-fn toLower(dest: []u8, str: []const u8) void {
-    for (dest, str) |*dest_char, surce_char| {
-        dest_char.* = surce_char | 0b00100000;
-    }
 }
 
 fn stringOrChar(this: *This) void {
