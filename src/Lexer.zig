@@ -1,5 +1,5 @@
 const std = @import("std");
-const Token = @import("token.zig").Token;
+const Token = @import("Token").Type;
 
 const This = @This();
 const TokenInfo = struct {
@@ -15,7 +15,7 @@ line_number: u32 = 0,
 line_start_postion: u32 = 0,
 position: u32 = 0,
 
-const mnemonics_map = @import("token.zig").mnemonics_map;
+const mnemonics_map = @import("Token").mnemonics_map;
 const not_delimiter_map = blk: {
     const len = std.math.maxInt(u8) + 1;
     var bitset = std.bit_set.StaticBitSet(len).initEmpty();
@@ -30,7 +30,7 @@ const not_delimiter_map = blk: {
 };
 
 const scan_map = map: {
-    var kvs: [std.math.maxInt(u8) + 1]*const fn (*This) void = undefined;
+    var kvs: [std.math.maxInt(u8) + 1]?*const fn (*This) void = undefined;
     for (&kvs, 0..) |*value, key| {
         value.* = switch (key) {
             ',' => comma,
@@ -48,7 +48,7 @@ const scan_map = map: {
             'a'...'z', 'A'...'Z' => registerOrMnemonicOrLabel,
             '\'' => stringOrChar,
             '0'...'9' => absolute,
-            else => noop,
+            else => null,
         };
     }
     break :map kvs;
@@ -68,7 +68,7 @@ pub fn deinit(this: This) void {
 pub fn scanTokens(this: *This) []TokenInfo {
     while (this.position != this.text.len) {
         this.token_start_postion = this.position;
-        scan_map[this.consume()](this);
+        if (scan_map[this.consume()]) |scan_fn| scan_fn(this);
     }
 
     return this.tokens.items;

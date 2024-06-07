@@ -4,6 +4,12 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const token = b.addModule("Token", .{
+        .root_source_file = b.path(("src/token.zig")),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const exe = b.addExecutable(.{
         .name = "l68",
         .root_source_file = b.path("src/main.zig"),
@@ -12,6 +18,7 @@ pub fn build(b: *std.Build) void {
     });
 
     b.installArtifact(exe);
+    exe.root_module.addImport("Token", token);
 
     const run_cmd = b.addRunArtifact(exe);
 
