@@ -161,7 +161,7 @@ pub const mnemonics_map = struct {
     }
 
     pub fn get(str: []const u8) ?Type {
-        if (str.len < 2 or str.len > 8) return null;
+        if (str.len < 2 or str.len > 7) return null;
         const full, const half = encodeFullAndHalf(str);
         const token = table_info.data[hash(half, table_info.seed, table_info.data.len)];
         return if (token[0] == full) token[1] else null;

@@ -28,7 +28,6 @@ const not_delimiter_map = blk: {
     }
     break :blk bitset;
 };
-
 const scan_map = map: {
     var kvs: [std.math.maxInt(u8) + 1]?*const fn (*This) void = undefined;
     for (&kvs, 0..) |*value, key| {
@@ -228,5 +227,3 @@ fn stringOrChar(this: *This) void {
     if (str.len < 3) @panic("wtf"); // TODO REPORT ERROR
     this.addToken(if (str.len == 3) .{ .char = str[1] } else .{ .string = str });
 }
-
-fn noop(_: *This) void {}
