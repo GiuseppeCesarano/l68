@@ -132,7 +132,7 @@ pub const mnemonics_map = struct {
         var data = [_]struct { u64, Type }{.{ 0, .comma }} ** size;
         var fill: usize = 0;
         var seed: u32 = 0;
-        while (fill != Type.mnemonics().len and seed < 15000) : (seed += 1) {
+        while (fill != mnemonics.len and seed < 15000) : (seed += 1) {
             fill = 0;
             @setEvalBranchQuota(std.math.maxInt(u32));
             for (mnemonics) |mnemonic| {
@@ -144,7 +144,7 @@ pub const mnemonics_map = struct {
                 } else break;
             }
         }
-        return .{ data, seed - 1, fill == Type.mnemonics().len };
+        return .{ data, seed - 1, fill == mnemonics.len };
     }
 
     fn encodeFullAndHalf(str: []const u8) struct { u64, u32 } {
