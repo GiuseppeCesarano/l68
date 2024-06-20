@@ -1,15 +1,25 @@
 const std = @import("std");
 
-pub const Type = union(enum(u8)) {
-    const This = @This();
+pub const Location = packed struct {
+    line: u32,
+    row: u32,
+    len: u16,
+};
 
+pub const Data = union {
+    number: u32,
+    index: u32,
+    byte: u8,
+};
+
+pub const Type = enum(u8) {
     // Literals
-    label: []const u8,
-    immediate: i64,
-    immediate_label: []const u8,
-    absolute: u32,
-    char: u8,
-    string: []const u8,
+    label,
+    immediate,
+    immediate_label,
+    absolute,
+    char,
+    string,
 
     // Single charchater tokens
     comma,
@@ -24,146 +34,152 @@ pub const Type = union(enum(u8)) {
     byte_size,
     word_size,
     long_size,
-    data_register: u8,
-    address_register: u8,
+    data_register,
+    address_register,
 
     // mnemonics (must be ketp sequential)
-    abcd,
-    add,
-    adda,
-    addi,
-    addq,
-    andd,
-    andi,
-    asl,
-    asr,
-    bcc,
-    bchg,
-    bclr,
-    bra,
-    bset,
-    bsr,
-    btst,
-    chk,
-    clr,
-    cmp,
-    cmpa,
-    cmpi,
-    cmpm,
-    dbcc,
-    dc,
-    dcb,
-    divs,
-    ds,
-    end,
-    eor,
-    eori,
-    equ,
-    exg,
-    ext,
+    // zig fmt: off
+    abcd, add, adda, addi, addq, andd, andi, asl, asr,
+    bcc, bchg, bclr, bra, bset, bsr, btst,
+    chk, clr,
+    cmp, cmpa, cmpi, cmpm,
+    dbcc, dc, dcb, divs, ds,
+    end, eor, eori, equ, exg, ext,
     illegal,
-    jmp,
-    jsr,
-    lea,
-    link,
-    lsl,
-    lsr,
-    move,
-    movea,
-    movep,
-    moveq,
-    muls,
-    mulu,
-    nbcd,
-    neg,
-    negx,
-    nop,
-    not,
-    org,
-    ori,
-    orr,
-    pea,
-    reg,
-    reset,
-    rol,
-    ror,
-    roxl,
-    roxr,
-    rte,
-    rtr,
-    rts,
-    sbcd,
-    scc,
-    set,
-    stop,
-    sub,
-    suba,
-    subi,
-    subq,
-    subx,
-    swap,
-    tas,
-    trap,
-    trapv,
-    tst,
+    jmp, jsr, 
+    lea, link, lsl, lsr,
+    move, movea, movep, moveq, muls, mulu,
+    nbcd, neg, negx, nop, not,
+    org, ori, orr,
+    pea, 
+    reg, reset, rol, ror, roxl, roxr, rte, rtr, rts, 
+    sbcd, scc, set, stop, sub, suba, subi, subq, subx, swap,
+    tas, trap, trapv, tst,
     unlk,
-
-    pub fn TagType() type {
-        return @typeInfo(@This()).Union.tag_type.?;
-    }
+    // zig fmt: on
 
     pub fn mnemonics() []const std.builtin.Type.EnumField {
-        return @typeInfo(TagType()).Enum.fields[@intFromEnum(TagType().abcd)..];
+        return @typeInfo(@This()).Enum.fields[@intFromEnum(@This().abcd)..];
     }
 };
 
-pub const mnemonics_map = struct {
-    const table_info = table: {
-        var size_multiplier: u32 = 1;
-        while (size_multiplier <= 35) : (size_multiplier += 1) {
-            const t = generateSizedTableWithSeed(Type.mnemonics().len * size_multiplier);
-            if (t[2]) break :table .{ .data = t[0], .seed = t[1] };
+const mnemonics_map = struct {
+    const Whole = u56;
+    const Part = u32;
+    const Entry = packed struct {
+        whole: Whole,
+        type: Type,
+    };
+
+    const table = table: {
+        for (1..35) |size_multiplier| {
+            const possible_table = generateSizedTableWithSeed(Type.mnemonics().len * size_multiplier);
+            if (possible_table) |tbl| break :table .{ .data = tbl[0], .seed = tbl[1] };
         }
         @compileError("mnemonics_map's size multiplier > 35");
     };
 
-    fn generateSizedTableWithSeed(comptime size: usize) struct { [size]struct { u64, Type }, u32, bool } {
+    fn generateSizedTableWithSeed(comptime size: usize) ?struct { [size]Entry, u32 } {
         const mnemonics = Type.mnemonics();
-        var data = [_]struct { u64, Type }{.{ 0, .comma }} ** size;
-        var fill: usize = 0;
-        var seed: u32 = 0;
-        while (fill != mnemonics.len and seed < 15000) : (seed += 1) {
-            fill = 0;
+        for (0..15000) |seed| {
             @setEvalBranchQuota(std.math.maxInt(u32));
+            var data = [_]Entry{.{ .whole = 0, .type = undefined }} ** size;
             for (mnemonics) |mnemonic| {
-                const full, const half = encodeFullAndHalf(mnemonic.name);
-                const i = hash(half, seed, size);
-                if (data[i][0] == 0) {
-                    data[i] = .{ full, @unionInit(Type, mnemonic.name, {}) };
-                    fill += 1;
-                } else break;
-            }
+                const whole, const part = encodeWholeAndPart(mnemonic.name);
+                const i = hash(part, seed, size);
+                if (data[i].whole != 0) break;
+                data[i] = Entry{ .whole = whole, .type = @enumFromInt(mnemonic.value) };
+            } else return .{ data, seed };
         }
-        return .{ data, seed - 1, fill == mnemonics.len };
+        return null;
     }
 
-    fn encodeFullAndHalf(str: []const u8) struct { u64, u32 } {
-        var full: u64 = 0;
+    fn encodeWholeAndPart(str: []const u8) struct { Whole, Part } {
+        std.debug.assert(str.len > 1 and str.len < 8);
+        var whole: Whole = 0;
         for (str) |c| {
-            full = (full << 8) | (c | 0b00100000);
+            whole = (whole << 8) | (c | 0b00100000);
         }
-        const half: u32 = @intCast(((full >> @intCast(8 * (str.len - 2))) << 16) | (full & 0xFFFF));
-        return .{ full, half };
+        const part: Part = @intCast(((whole >> @intCast(8 * (str.len - 2))) << 16) | (whole & 0xFFFF));
+        return .{ whole, part };
     }
 
-    fn hash(input: u32, seed: u32, len: usize) usize {
+    fn hash(input: Part, seed: u32, len: usize) usize {
         return std.hash.Murmur2_32.hashUint32WithSeed(input, seed) % len;
     }
 
-    pub fn get(str: []const u8) ?Type {
+    pub inline fn get(str: []const u8) ?Type {
         if (str.len < 2 or str.len > 7) return null;
-        const full, const half = encodeFullAndHalf(str);
-        const token = table_info.data[hash(half, table_info.seed, table_info.data.len)];
-        return if (token[0] == full) token[1] else null;
+        const whole, const part = encodeWholeAndPart(str);
+        const token = table.data[hash(part, table.seed, table.data.len)];
+        return if (token.whole == whole) token.type else null;
     }
 };
+
+type: Type,
+location: Location,
+data: Data,
+pub fn mnemonicStrToType(str: []const u8) ?Type {
+    return mnemonics_map.get(str);
+}
+
+pub fn List() type {
+    const Token = @This();
+    return struct {
+        const This = @This();
+        tokens: std.ArrayList(Token),
+        strings: std.ArrayList([]const u8),
+
+        pub fn init(allocator: std.mem.Allocator, text_len: usize) !This {
+            const tokens_len: usize = @intFromFloat(@ceil(@as(f64, @floatFromInt(text_len)) * 0.4));
+            return This{
+                .tokens = try std.ArrayList(Token).initCapacity(allocator, tokens_len),
+                .strings = try std.ArrayList([]const u8).initCapacity(allocator, @intFromFloat(@ceil(@as(f64, @floatFromInt(tokens_len)) * 0.15))),
+            };
+        }
+
+        pub fn deinit(this: This) void {
+            this.tokens.deinit();
+            this.strings.deinit();
+        }
+
+        pub fn items(this: This) []Token {
+            return this.tokens.items;
+        }
+
+        pub fn addOnlyTokneType(this: *This, t: Type, location: Location) void {
+            this.handleTokensCapacity();
+            const ptr = this.tokens.addOneAssumeCapacity();
+            ptr.type = t;
+            ptr.location = location;
+        }
+
+        pub fn addTokenWithData(this: *This, t: Token.Type, location: Location, data: Data) void {
+            this.handleTokensCapacity();
+            this.tokens.addOneAssumeCapacity().* = .{
+                .type = t,
+                .location = location,
+                .data = data,
+            };
+        }
+
+        inline fn handleTokensCapacity(this: This) void {
+            if (this.tokens.capacity == this.tokens.items.len) @panic("TODO FIX ME (Branch predictor wrong)");
+        }
+
+        pub fn addTokenWithString(this: *This, t: Token.Type, location: Location, str: []const u8) void {
+            this.handleTokensCapacity();
+            this.handleStringsCapacity();
+            this.tokens.addOneAssumeCapacity().* = .{
+                .type = t,
+                .location = location,
+                .data = .{ .index = @intCast(this.strings.items.len) },
+            };
+            this.strings.addOneAssumeCapacity().* = str;
+        }
+
+        inline fn handleStringsCapacity(this: This) void {
+            if (this.strings.capacity == this.strings.items.len) @panic("TODO FIX ME (Branch predictor wrong)");
+        }
+    };
+}

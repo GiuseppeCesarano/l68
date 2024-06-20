@@ -1,22 +1,15 @@
 const std = @import("std");
-const Token = @import("Token").Type;
+const Token = @import("Token");
 
 const This = @This();
-const TokenInfo = struct {
-    token: Token,
-    line: u32,
-    row: u32,
-};
 
 text: []const u8,
-tokens: std.ArrayList(TokenInfo),
+tokens: Token.List(),
 token_start_postion: u32 = 0,
 line_number: u32 = 0,
-line_start_postion: u32 = 0,
 position: u32 = 0,
 
-const mnemonics_map = @import("Token").mnemonics_map;
-const not_delimiter_map = blk: {
+const not_delimiter_map = set: {
     const len = std.math.maxInt(u8) + 1;
     var bitset = std.bit_set.StaticBitSet(len).initEmpty();
     for (0..len) |index| {
@@ -26,8 +19,9 @@ const not_delimiter_map = blk: {
             else => false,
         });
     }
-    break :blk bitset;
+    break :set bitset;
 };
+
 const scan_map = map: {
     var kvs: [std.math.maxInt(u8) + 1]?*const fn (*This) void = undefined;
     for (&kvs, 0..) |*value, key| {
@@ -54,23 +48,22 @@ const scan_map = map: {
 };
 
 pub fn init(text: []const u8, allocator: std.mem.Allocator) This {
-    var tokens = std.ArrayList(TokenInfo).init(allocator);
-    const expected_tokens_len: usize = @intFromFloat(@ceil(@as(f64, @floatFromInt(text.len)) * 0.4));
-    tokens.ensureTotalCapacity(expected_tokens_len) catch @panic("Could not allocate memory for lexing");
-    return .{ .text = text, .tokens = tokens };
+    return .{
+        .text = text,
+        .tokens = Token.List().init(allocator, text.len) catch @panic("Could not allocate memory for lexing."),
+    };
 }
 
 pub fn deinit(this: This) void {
     this.tokens.deinit();
 }
 
-pub fn scanTokens(this: *This) []TokenInfo {
+pub fn scanTokens(this: *This) []Token {
     while (this.position != this.text.len) {
         this.token_start_postion = this.position;
         if (scan_map[this.consume()]) |scan_fn| scan_fn(this);
     }
-
-    return this.tokens.items;
+    return this.tokens.items();
 }
 
 inline fn consume(this: *This) u8 {
@@ -80,44 +73,50 @@ inline fn consume(this: *This) u8 {
 }
 
 fn comma(this: *This) void {
-    this.addToken(.comma);
+    this.addOnlyTokenType(.comma);
 }
 
-fn addToken(this: *This, t: Token) void {
-    this.tokens.append(.{
-        .token = t,
+inline fn addOnlyTokenType(this: *This, t: Token.Type) void {
+    this.tokens.addOnlyTokneType(
+        t,
+        this.computeLocation(),
+    );
+}
+
+inline fn computeLocation(this: This) Token.Location {
+    return .{
         .line = this.line_number,
-        .row = this.position - this.line_start_postion,
-    }) catch @panic("Could not allocate memory for lexing");
+        .row = this.token_start_postion,
+        .len = @intCast(this.position - this.token_start_postion),
+    };
 }
 
 fn leftParentheses(this: *This) void {
-    this.addToken(.left_parentheses);
+    this.addOnlyTokenType(.left_parentheses);
 }
 
 fn rightParentheses(this: *This) void {
-    this.addToken(.right_parentheses);
+    this.addOnlyTokenType(.right_parentheses);
 }
 
 fn plus(this: *This) void {
-    this.addToken(.plus);
+    this.addOnlyTokenType(.plus);
 }
 
 fn minus(this: *This) void {
-    this.addToken(.minus);
+    this.addOnlyTokenType(.minus);
 }
 
 fn multiply(this: *This) void {
-    this.addToken(.multiply);
+    this.addOnlyTokenType(.multiply);
 }
 
 fn divide(this: *This) void {
-    this.addToken(.divide);
+    this.addOnlyTokenType(.divide);
 }
 
 fn newLine(this: *This) void {
     this.line_number += 1;
-    this.line_start_postion = this.position;
 }
 
 fn size(this: *This) void {
@@ -125,9 +124,9 @@ fn size(this: *This) void {
     const str = this.text[this.token_start_postion..this.position];
     if (str.len != 2) @panic("report error");
     switch (str[1] | 0b00100000) {
-        'b' => this.addToken(.byte_size),
-        'w' => this.addToken(.word_size),
-        'l' => this.addToken(.long_size),
+        'b' => this.addOnlyTokenType(.byte_size),
+        'w' => this.addOnlyTokenType(.word_size),
+        'l' => this.addOnlyTokenType(.long_size),
         else => @panic("report error"), // TODO report error to user
     }
 }
@@ -143,10 +142,19 @@ fn immediate(this: *This) void {
     const offset: usize = 1 + @as(usize, @intFromBool(is_negative)) + @intFromBool(base != 10 and base != null);
     const str = this.text[this.token_start_postion + offset .. this.position];
     if (base) |b| {
-        if (std.fmt.parseUnsigned(i64, str, b)) |value| {
-            this.addToken(.{ .immediate = value * @as(i64, if (is_negative) -1 else 1) });
+        if (std.fmt.parseUnsigned(u32, str, b)) |value| {
+            if (is_negative) this.addOnlyTokenType(.minus);
+            this.addTokenWithData(.immediate, .{ .number = value });
         } else |_| @panic("report error"); //TODO report
-    } else this.addToken(.{ .immediate_label = str });
+    } else this.addTokenWithString(.immediate_label, str);
+}
+
+inline fn addTokenWithData(this: *This, t: Token.Type, data: Token.Data) void {
+    this.tokens.addTokenWithData(t, this.computeLocation(), data);
+}
+
+inline fn addTokenWithString(this: *This, t: Token.Type, str: []const u8) void {
+    this.tokens.addTokenWithString(t, this.computeLocation(), str);
 }
 
 inline fn skipIfEql(this: *This, c: u8) bool {
@@ -170,7 +178,6 @@ fn consumeIfBase(this: *This) ?u8 {
             return 8;
         },
         '0'...'9' => {
-            this.skip();
             return 10;
         },
         '$' => {
@@ -196,7 +203,7 @@ fn absolute(this: *This) void {
     this.skipUntillDelimiter();
     const str = this.text[this.token_start_postion + @intFromBool(base != 10) .. this.position];
     if (std.fmt.parseUnsigned(u32, str, base)) |value| {
-        this.addToken(.{ .absolute = value });
+        this.addTokenWithData(.absolute, .{ .number = value });
     } else |_| @panic("report error"); //TODO report error
 }
 
@@ -208,22 +215,33 @@ fn comment(this: *This) void {
 fn registerOrMnemonicOrLabel(this: *This) void {
     this.skipUntillDelimiter();
     const str = this.text[this.token_start_postion..this.position];
-    this.addToken(parseRegister(str) orelse mnemonics_map.get(str) orelse .{ .label = str });
+    if (this.parseRegister(str)) return;
+    if (Token.mnemonicStrToType(str)) |mnemonic| {
+        this.addOnlyTokenType(mnemonic);
+        return;
+    }
+    this.addTokenWithString(.label, str);
 }
 
-fn parseRegister(str: []const u8) ?Token {
-    if (str.len != 2) return null;
-    const num = std.fmt.parseUnsigned(u8, str[1..], 10) catch return null;
-    return switch (str[0] | 0b00100000) {
-        'd' => .{ .data_register = num },
-        'a' => .{ .address_register = num },
-        else => null,
+fn parseRegister(this: *This, str: []const u8) bool {
+    if (str.len != 2) return false;
+    const num = std.fmt.parseUnsigned(u8, str[1..], 10) catch return false;
+    const t = switch (str[0] | 0b00100000) {
+        'd' => Token.Type.data_register,
+        'a' => Token.Type.address_register,
+        else => return false,
     };
+    this.addTokenWithData(t, .{ .byte = num });
+    return true;
 }
 
 fn stringOrChar(this: *This) void {
     while (this.position != this.text.len and this.consume() != '\'') {}
     const str = this.text[this.token_start_postion..this.position];
     if (str.len < 3) @panic("wtf"); // TODO REPORT ERROR
-    this.addToken(if (str.len == 3) .{ .char = str[1] } else .{ .string = str });
+    if (str.len == 3) {
+        this.addTokenWithData(.char, .{ .byte = str[1] });
+    } else {
+        this.addTokenWithString(.string, str);
+    }
 }

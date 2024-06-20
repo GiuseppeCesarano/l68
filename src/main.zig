@@ -28,18 +28,18 @@ pub fn main() !void {
     // std.debug.print("{}\n", .{@as(f32, @floatFromInt(tokens.len)) / @as(f32, @floatFromInt(file_stats.size))});
     // const print = std.debug.print;
     // var last_line: u32 = 0;
-    // for (tokens) |token_info| {
-    //     if (last_line != token_info.line) {
-    //         last_line = token_info.line;
+    // for (tokens) |token| {
+    //     if (last_line != token.location.line) {
+    //         last_line = token.location.line;
     //         print("\n", .{});
     //     }
-    //     switch (token_info.token) {
-    //         .label => print(" {s}", .{token_info.token.label}),
-    //         .immediate => print(" #{}", .{token_info.token.immediate}),
-    //         .immediate_label => print(" #{s}", .{token_info.token.immediate_label}),
-    //         .absolute => print(" {}", .{token_info.token.absolute}),
-    //         .char => print(" '{c}'", .{token_info.token.char}),
-    //         .string => print(" '{s}'", .{token_info.token.string}),
+    //     switch (token.type) {
+    //         .label => print(" {s}", .{"PLACEHOLDER"}),
+    //         .immediate => print(" #{}", .{token.data.number}),
+    //         .immediate_label => print(" #{s}", .{"PLACEHOLDER2"}),
+    //         .absolute => print(" {}", .{token.data.number}),
+    //         .char => print(" '{c}'", .{token.data.byte}),
+    //         .string => print(" '{s}'", .{"PLACEHOLDER3"}),
     //         .comma => print(",", .{}),
     //         .left_parentheses => print(" (", .{}),
     //         .right_parentheses => print(" )", .{}),
@@ -50,9 +50,9 @@ pub fn main() !void {
     //         .byte_size => print(".b", .{}),
     //         .word_size => print(".w", .{}),
     //         .long_size => print(".l", .{}),
-    //         .data_register => print(" d{}", .{token_info.token.data_register}),
-    //         .address_register => print(" a{}", .{token_info.token.address_register}),
-    //         else => print(" {s}", .{@tagName(token_info.token)}),
+    //         .data_register => print(" d{}", .{token.data.byte}),
+    //         .address_register => print(" a{}", .{token.data.byte}),
+    //         else => print(" {s}", .{@tagName(token.type)}),
     //     }
     // }
 }
