@@ -39,7 +39,7 @@ pub const Type = enum(u8) {
 
     // mnemonics (must be ketp sequential)
     // zig fmt: off
-    abcd, add, adda, addi, addq, andd, andi, asl, asr,
+    abcd, add, adda, addi, addq, @"and", andi, asl, asr,
     bcc, bchg, bclr, bra, bset, bsr, btst,
     chk, clr,
     cmp, cmpa, cmpi, cmpm,
@@ -96,9 +96,12 @@ const mnemonics_map = struct {
 
     fn encodeWholeAndPart(str: []const u8) struct { Whole, Part } {
         std.debug.assert(str.len > 1 and str.len < 8);
-        var whole: Whole = 0;
-        for (str) |c| {
-            whole = (whole << 8) | (c | 0b00100000);
+        const is_odd = str.len % 2 == 1;
+        var whole: Whole = if (is_odd) @intCast(str[0] | 0x20) else 0;
+        var i: usize = @as(usize, @intCast(@intFromBool(is_odd)));
+        while (i != str.len) : (i += 2) {
+            const wchar = @as(u16, str[i]) << 8 | str[i + 1];
+            whole = (whole << 16) | (wchar | 0x2020);
         }
         const part: Part = @intCast(((whole >> @intCast(8 * (str.len - 2))) << 16) | (whole & 0xFFFF));
         return .{ whole, part };
