@@ -132,7 +132,8 @@ fn size(this: *This) void {
 }
 
 inline fn peek(this: This) u8 {
-    return if (this.position != this.text.len) this.text[this.position] else 0;
+    std.debug.assert(this.position < this.text.len);
+    return this.text[this.position];
 }
 
 fn immediate(this: *This) void {
