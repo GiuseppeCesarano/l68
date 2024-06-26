@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const Location = packed struct {
+pub const Location = struct {
     line: u32,
     row: u32,
     len: u16,
