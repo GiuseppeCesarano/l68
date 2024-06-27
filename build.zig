@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const token = b.addModule("Token", .{
-        .root_source_file = b.path(("src/token.zig")),
+        .root_source_file = b.path(("src/Token.zig")),
         .target = target,
         .optimize = optimize,
     });
