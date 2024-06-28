@@ -150,14 +150,14 @@ pub fn List() type {
             return this.tokens.items;
         }
 
-        pub fn addOnlyTokneType(this: *This, t: Type, location: Location) void {
+        pub fn addOnlyType(this: *This, t: Type, location: Location) void {
             this.handleTokensCapacity();
             const ptr = this.tokens.addOneAssumeCapacity();
             ptr.type = t;
             ptr.location = location;
         }
 
-        pub fn addTokenWithData(this: *This, t: Token.Type, location: Location, data: Data) void {
+        pub fn addWithData(this: *This, t: Token.Type, location: Location, data: Data) void {
             this.handleTokensCapacity();
             this.tokens.addOneAssumeCapacity().* = .{
                 .type = t,
@@ -170,7 +170,7 @@ pub fn List() type {
             if (this.tokens.capacity == this.tokens.items.len) @panic("TODO FIX ME (Branch predictor wrong)");
         }
 
-        pub fn addTokenWithString(this: *This, t: Token.Type, location: Location, str: []const u8) void {
+        pub fn addWithString(this: *This, t: Token.Type, location: Location, str: []const u8) void {
             this.handleTokensCapacity();
             this.handleStringsCapacity();
             this.tokens.addOneAssumeCapacity().* = .{

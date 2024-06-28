@@ -67,9 +67,8 @@ pub fn scanTokens(this: *This) []Token {
 }
 
 inline fn consume(this: *This) u8 {
-    const char = this.text[this.position];
     this.position += 1;
-    return char;
+    return this.text[this.position - 1];
 }
 
 fn comma(this: *This) void {
@@ -77,10 +76,7 @@ fn comma(this: *This) void {
 }
 
 inline fn addOnlyTokenType(this: *This, t: Token.Type) void {
-    this.tokens.addOnlyTokneType(
-        t,
-        this.computeLocation(),
-    );
+    this.tokens.addOnlyType(t, this.computeLocation());
 }
 
 inline fn computeLocation(this: This) Token.Location {
@@ -131,11 +127,6 @@ fn size(this: *This) void {
     }
 }
 
-inline fn peek(this: This) u8 {
-    std.debug.assert(this.position < this.text.len);
-    return this.text[this.position];
-}
-
 fn immediate(this: *This) void {
     const is_negative = this.skipIfEql('-');
     const base = this.consumeIfBase();
@@ -150,22 +141,10 @@ fn immediate(this: *This) void {
     } else this.addTokenWithString(.immediate_label, str);
 }
 
-inline fn addTokenWithData(this: *This, t: Token.Type, data: Token.Data) void {
-    this.tokens.addTokenWithData(t, this.computeLocation(), data);
-}
-
-inline fn addTokenWithString(this: *This, t: Token.Type, str: []const u8) void {
-    this.tokens.addTokenWithString(t, this.computeLocation(), str);
-}
-
 inline fn skipIfEql(this: *This, c: u8) bool {
     const is_eql = c == this.peek();
     this.position += @intFromBool(is_eql);
     return is_eql;
-}
-
-inline fn skip(this: *This) void {
-    this.position += 1;
 }
 
 fn consumeIfBase(this: *This) ?u8 {
@@ -189,23 +168,27 @@ fn consumeIfBase(this: *This) ?u8 {
     }
 }
 
+inline fn peek(this: This) u8 {
+    std.debug.assert(this.position < this.text.len);
+    return this.text[this.position];
+}
+
+inline fn skip(this: *This) void {
+    this.position += 1;
+}
+
+inline fn addTokenWithData(this: *This, t: Token.Type, data: Token.Data) void {
+    this.tokens.addWithData(t, this.computeLocation(), data);
+}
+
+inline fn addTokenWithString(this: *This, t: Token.Type, str: []const u8) void {
+    this.tokens.addWithString(t, this.computeLocation(), str);
+}
+
 fn skipUntillDelimiter(this: *This) void {
     while (not_delimiter_map.isSet(this.peek())) {
         this.skip();
     }
-}
-
-fn absolute(this: *This) void {
-    this.position -= 1;
-    const base = this.consumeIfBase() orelse b: {
-        this.skip();
-        break :b 10;
-    };
-    this.skipUntillDelimiter();
-    const str = this.text[this.token_start_postion + @intFromBool(base != 10) .. this.position];
-    if (std.fmt.parseUnsigned(u32, str, base)) |value| {
-        this.addTokenWithData(.absolute, .{ .number = value });
-    } else |_| @panic("report error"); //TODO report error
 }
 
 fn comment(this: *This) void {
@@ -237,7 +220,7 @@ fn parseRegister(this: *This, str: []const u8) bool {
 }
 
 fn stringOrChar(this: *This) void {
-    while (this.position != this.text.len and this.consume() != '\'') {}
+    while (this.position < this.text.len and this.consume() != '\'') {}
     const str = this.text[this.token_start_postion..this.position];
     if (str.len < 3) @panic("wtf"); // TODO REPORT ERROR
     if (str.len == 3) {
@@ -245,4 +228,17 @@ fn stringOrChar(this: *This) void {
     } else {
         this.addTokenWithString(.string, str);
     }
+}
+
+fn absolute(this: *This) void {
+    this.position -= 1;
+    const base = this.consumeIfBase() orelse b: {
+        this.skip();
+        break :b 10;
+    };
+    this.skipUntillDelimiter();
+    const str = this.text[this.token_start_postion + @intFromBool(base != 10) .. this.position];
+    if (std.fmt.parseUnsigned(u32, str, base)) |value| {
+        this.addTokenWithData(.absolute, .{ .number = value });
+    } else |_| @panic("report error"); //TODO report error
 }
