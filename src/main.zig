@@ -22,7 +22,7 @@ pub fn main() !void {
 
     var scanner = Lexer.init(file_content, allocator);
     defer scanner.deinit();
-    const tokens = scanner.scanTokens();
+    const tokens = scanner.scan();
 
     std.debug.print("{}\n", .{tokens.len});
     // std.debug.print("{}\n", .{@as(f32, @floatFromInt(tokens.len)) / @as(f32, @floatFromInt(file_stats.size))});

@@ -58,7 +58,7 @@ pub fn deinit(this: This) void {
     this.tokens.deinit();
 }
 
-pub fn scanTokens(this: *This) []Token {
+pub fn scan(this: *This) []Token {
     while (this.position != this.text.len) {
         this.token_start_postion = this.position;
         if (scan_map[this.consume()]) |scan_fn| scan_fn(this);
