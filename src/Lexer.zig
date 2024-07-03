@@ -4,9 +4,10 @@ const Token = @import("Token");
 const This = @This();
 
 text: []const u8,
-tokens: Token.List(),
-token_start_postion: u32 = 0,
+tokens: std.ArrayList(Token),
+token_start: u32 = 0,
 line_number: u32 = 0,
+line_start: u32 = 0,
 position: u32 = 0,
 
 const not_delimiter_map = set: {
@@ -48,9 +49,10 @@ const scan_map = map: {
 };
 
 pub fn init(text: []const u8, allocator: std.mem.Allocator) This {
+    const tokens_len: usize = @intFromFloat(@ceil(@as(f64, @floatFromInt(text.len)) * 0.43));
     return .{
         .text = text,
-        .tokens = Token.List().init(allocator, text.len) catch @panic("Could not allocate memory for lexing."),
+        .tokens = std.ArrayList(Token).initCapacity(allocator, tokens_len) catch @panic("Could not allocate memory for lexing"),
     };
 }
 
@@ -60,10 +62,10 @@ pub fn deinit(this: This) void {
 
 pub fn scan(this: *This) []Token {
     while (this.position != this.text.len) {
-        this.token_start_postion = this.position;
+        this.token_start = this.position;
         if (scan_map[this.consume()]) |scan_fn| scan_fn(this);
     }
-    return this.tokens.items();
+    return this.tokens.items;
 }
 
 inline fn consume(this: *This) u8 {
@@ -72,57 +74,58 @@ inline fn consume(this: *This) u8 {
 }
 
 fn comma(this: *This) void {
-    this.addOnlyTokenType(.comma);
+    this.addToken(.comma);
 }
 
-inline fn addOnlyTokenType(this: *This, t: Token.Type) void {
-    this.tokens.addOnlyType(t, this.computeLocation());
+fn addToken(this: *This, t: Token.Type) void {
+    if (this.tokens.capacity == this.tokens.items.len) @panic("TODO FIX ME (Branch predictor wrong)");
+    const ptr = this.tokens.addOneAssumeCapacity();
+    ptr.type = t;
+    ptr.relative_string = this.computeRelativeString();
 }
 
-inline fn computeLocation(this: This) Token.Location {
-    return .{
-        .line = this.line_number,
-        .row = this.token_start_postion,
-        .len = @intCast(this.position - this.token_start_postion),
-    };
+fn computeRelativeString(this: This) std.meta.FieldType(Token, std.meta.FieldEnum(Token).relative_string) {
+    return .{ .offset = @intCast(this.position - this.line_start), .len = @intCast(this.position - this.token_start) };
 }
 
 fn leftParentheses(this: *This) void {
-    this.addOnlyTokenType(.left_parentheses);
+    this.addToken(.left_parentheses);
 }
 
 fn rightParentheses(this: *This) void {
-    this.addOnlyTokenType(.right_parentheses);
+    this.addToken(.right_parentheses);
 }
 
 fn plus(this: *This) void {
-    this.addOnlyTokenType(.plus);
+    this.addToken(.plus);
 }
 
 fn minus(this: *This) void {
-    this.addOnlyTokenType(.minus);
+    this.addToken(.minus);
 }
 
 fn multiply(this: *This) void {
-    this.addOnlyTokenType(.multiply);
+    this.addToken(.multiply);
 }
 
 fn divide(this: *This) void {
-    this.addOnlyTokenType(.divide);
+    this.addToken(.divide);
 }
 
 fn newLine(this: *This) void {
     this.line_number += 1;
+    this.line_start = this.position;
+    this.addTokenWithData(.new_line, .{ .number = this.line_start });
 }
 
 fn size(this: *This) void {
     this.skipUntillDelimiter();
-    const str = this.text[this.token_start_postion..this.position];
+    const str = this.text[this.token_start..this.position];
     if (str.len != 2) @panic("report error");
     switch (str[1] | 0b00100000) {
-        'b' => this.addOnlyTokenType(.byte_size),
-        'w' => this.addOnlyTokenType(.word_size),
-        'l' => this.addOnlyTokenType(.long_size),
+        'b' => this.addToken(.byte_size),
+        'w' => this.addToken(.word_size),
+        'l' => this.addToken(.long_size),
         else => @panic("report error"), // TODO report error to user
     }
 }
@@ -132,13 +135,13 @@ fn immediate(this: *This) void {
     const base = this.consumeIfBase();
     this.skipUntillDelimiter();
     const offset: usize = 1 + @as(usize, @intFromBool(is_negative)) + @intFromBool(base != 10 and base != null);
-    const str = this.text[this.token_start_postion + offset .. this.position];
+    const str = this.text[this.token_start + offset .. this.position];
     if (base) |b| {
         if (std.fmt.parseUnsigned(u32, str, b)) |value| {
-            if (is_negative) this.addOnlyTokenType(.minus);
+            if (is_negative) this.addToken(.minus);
             this.addTokenWithData(.immediate, .{ .number = value });
         } else |_| @panic("report error"); //TODO report
-    } else this.addTokenWithString(.immediate_label, str);
+    } else this.addToken(.immediate_label);
 }
 
 inline fn skipIfEql(this: *This, c: u8) bool {
@@ -178,11 +181,8 @@ inline fn skip(this: *This) void {
 }
 
 inline fn addTokenWithData(this: *This, t: Token.Type, data: Token.Data) void {
-    this.tokens.addWithData(t, this.computeLocation(), data);
-}
-
-inline fn addTokenWithString(this: *This, t: Token.Type, str: []const u8) void {
-    this.tokens.addWithString(t, this.computeLocation(), str);
+    if (this.tokens.capacity == this.tokens.items.len) @panic("TODO FIX ME (Branch predictor wrong)");
+    this.tokens.appendAssumeCapacity(.{ .type = t, .data = data, .relative_string = this.computeRelativeString() });
 }
 
 fn skipUntillDelimiter(this: *This) void {
@@ -198,13 +198,13 @@ fn comment(this: *This) void {
 
 fn registerOrMnemonicOrLabel(this: *This) void {
     this.skipUntillDelimiter();
-    const str = this.text[this.token_start_postion..this.position];
+    const str = this.text[this.token_start..this.position];
     if (this.parseRegister(str)) return;
     if (Token.mnemonicStrToType(str)) |mnemonic| {
-        this.addOnlyTokenType(mnemonic);
+        this.addToken(mnemonic);
         return;
     }
-    this.addTokenWithString(.label, str);
+    this.addToken(.label);
 }
 
 fn parseRegister(this: *This, str: []const u8) bool {
@@ -221,12 +221,12 @@ fn parseRegister(this: *This, str: []const u8) bool {
 
 fn stringOrChar(this: *This) void {
     while (this.position < this.text.len and this.consume() != '\'') {}
-    const str = this.text[this.token_start_postion..this.position];
+    const str = this.text[this.token_start..this.position];
     if (str.len < 3) @panic("wtf"); // TODO REPORT ERROR
     if (str.len == 3) {
         this.addTokenWithData(.char, .{ .byte = str[1] });
     } else {
-        this.addTokenWithString(.string, str);
+        this.addToken(.string);
     }
 }
 
@@ -237,7 +237,7 @@ fn absolute(this: *This) void {
         break :b 10;
     };
     this.skipUntillDelimiter();
-    const str = this.text[this.token_start_postion + @intFromBool(base != 10) .. this.position];
+    const str = this.text[this.token_start + @intFromBool(base != 10) .. this.position];
     if (std.fmt.parseUnsigned(u32, str, base)) |value| {
         this.addTokenWithData(.absolute, .{ .number = value });
     } else |_| @panic("report error"); //TODO report error

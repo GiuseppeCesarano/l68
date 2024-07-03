@@ -1,14 +1,8 @@
 const std = @import("std");
+const CompactStringView = @import("helpers").CompactStringView;
 
-pub const Location = struct {
-    line: u32,
-    row: u32,
-    len: u16,
-};
-
-pub const Data = union {
+pub const Data = packed union {
     number: u32,
-    index: u32,
     byte: u8,
 };
 
@@ -28,6 +22,7 @@ pub const Type = enum(u8) {
     plus,
     minus,
     multiply,
+    new_line,
     divide,
 
     // Dual charchater tokens
@@ -107,8 +102,9 @@ const mnemonics_map = struct {
         return .{ whole, part };
     }
 
-    fn hash(input: Part, seed: u32, len: usize) usize {
-        return std.hash.Murmur2_32.hashUint32WithSeed(input, seed) % len;
+    fn hash(input: Part, seed: u32, comptime len: usize) usize {
+        const fp = input ^ seed;
+        return (fp ^ (fp << 1)) % len;
     }
 
     pub inline fn get(str: []const u8) ?Type {
@@ -120,69 +116,9 @@ const mnemonics_map = struct {
 };
 
 type: Type,
-location: Location,
 data: Data,
+relative_string: CompactStringView,
+
 pub fn mnemonicStrToType(str: []const u8) ?Type {
     return mnemonics_map.get(str);
-}
-
-pub fn List() type {
-    const Token = @This();
-    return struct {
-        const This = @This();
-        tokens: std.ArrayList(Token),
-        strings: std.ArrayList([]const u8),
-
-        pub fn init(allocator: std.mem.Allocator, text_len: usize) !This {
-            const tokens_len: usize = @intFromFloat(@ceil(@as(f64, @floatFromInt(text_len)) * 0.4));
-            return This{
-                .tokens = try std.ArrayList(Token).initCapacity(allocator, tokens_len),
-                .strings = try std.ArrayList([]const u8).initCapacity(allocator, @intFromFloat(@ceil(@as(f64, @floatFromInt(tokens_len)) * 0.15))),
-            };
-        }
-
-        pub fn deinit(this: This) void {
-            this.tokens.deinit();
-            this.strings.deinit();
-        }
-
-        pub fn items(this: This) []Token {
-            return this.tokens.items;
-        }
-
-        pub fn addOnlyType(this: *This, t: Type, location: Location) void {
-            this.handleTokensCapacity();
-            const ptr = this.tokens.addOneAssumeCapacity();
-            ptr.type = t;
-            ptr.location = location;
-        }
-
-        pub fn addWithData(this: *This, t: Token.Type, location: Location, data: Data) void {
-            this.handleTokensCapacity();
-            this.tokens.addOneAssumeCapacity().* = .{
-                .type = t,
-                .location = location,
-                .data = data,
-            };
-        }
-
-        inline fn handleTokensCapacity(this: This) void {
-            if (this.tokens.capacity == this.tokens.items.len) @panic("TODO FIX ME (Branch predictor wrong)");
-        }
-
-        pub fn addWithString(this: *This, t: Token.Type, location: Location, str: []const u8) void {
-            this.handleTokensCapacity();
-            this.handleStringsCapacity();
-            this.tokens.addOneAssumeCapacity().* = .{
-                .type = t,
-                .location = location,
-                .data = .{ .index = @intCast(this.strings.items.len) },
-            };
-            this.strings.addOneAssumeCapacity().* = str;
-        }
-
-        inline fn handleStringsCapacity(this: This) void {
-            if (this.strings.capacity == this.strings.items.len) @panic("TODO FIX ME (Branch predictor wrong)");
-        }
-    };
 }

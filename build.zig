@@ -4,11 +4,18 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const helpers = b.addModule("Token", .{
+        .root_source_file = b.path(("src/helpers.zig")),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const token = b.addModule("Token", .{
         .root_source_file = b.path(("src/Token.zig")),
         .target = target,
         .optimize = optimize,
     });
+    token.addImport("helpers", helpers);
 
     const exe = b.addExecutable(.{
         .name = "l68",
@@ -32,7 +39,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("src/helpers.zig"),
         .target = target,
         .optimize = optimize,
     });

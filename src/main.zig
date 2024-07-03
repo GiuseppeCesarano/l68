@@ -25,7 +25,7 @@ pub fn main() !void {
     const tokens = scanner.scan();
 
     std.debug.print("{}\n", .{tokens.len});
-    // std.debug.print("{}\n", .{@as(f32, @floatFromInt(tokens.len)) / @as(f32, @floatFromInt(file_stats.size))});
+    // std.debug.print("{}\n", .{@as(f64, @floatFromInt(tokens.len)) / @as(f64, @floatFromInt(file_content.len))});
     // const print = std.debug.print;
     // var last_line: u32 = 0;
     // for (tokens) |token| {
