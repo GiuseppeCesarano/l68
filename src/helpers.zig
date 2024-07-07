@@ -25,7 +25,7 @@ pub const CompactStringView = packed struct {
 };
 
 test "CompactStringView size test" {
-    try std.testing.expect(@bitSizeOf(CompactStringView) == 32);
+    try std.testing.expectEqual(@bitSizeOf(CompactStringView), 32);
 }
 
 test "CompactStringView slice" {
@@ -33,12 +33,12 @@ test "CompactStringView slice" {
     const sw = CompactStringView{ .offset = 2, .len = 2 };
 
     const slice = sw.toSlice(s);
-    try std.testing.expect(slice.len == 2);
-    try std.testing.expect(slice[0] == '2');
-    try std.testing.expect(slice[1] == '3');
+    try std.testing.expectEqual(slice.len, 2);
+    try std.testing.expectEqual(slice[0], '2');
+    try std.testing.expectEqual(slice[1], '3');
 
     const sliceOffset = sw.toSliceWithOffset(s, 1);
-    try std.testing.expect(sliceOffset.len == 2);
-    try std.testing.expect(sliceOffset[0] == '3');
-    try std.testing.expect(sliceOffset[1] == '4');
+    try std.testing.expectEqual(sliceOffset.len, 2);
+    try std.testing.expectEqual(sliceOffset[0], '3');
+    try std.testing.expectEqual(sliceOffset[1], '4');
 }

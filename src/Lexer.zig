@@ -13,6 +13,7 @@ position: u32 = 0,
 const not_delimiter_map = set: {
     const len = std.math.maxInt(u8) + 1;
     var bitset = std.bit_set.StaticBitSet(len).initEmpty();
+
     for (0..len) |index| {
         @setEvalBranchQuota(5000);
         bitset.setValue(index, switch (index) {
@@ -65,6 +66,7 @@ pub fn scan(this: *This) []Token {
         this.token_start = this.position;
         if (scan_map[this.consume()]) |scan_fn| scan_fn(this);
     }
+
     return this.tokens.items;
 }
 
@@ -79,6 +81,7 @@ fn comma(this: *This) void {
 
 fn addToken(this: *This, t: Token.Type) void {
     if (this.tokens.capacity == this.tokens.items.len) @panic("TODO FIX ME (Branch predictor wrong)");
+
     const ptr = this.tokens.addOneAssumeCapacity();
     ptr.type = t;
     ptr.relative_string = this.computeRelativeString();
@@ -121,7 +124,9 @@ fn newLine(this: *This) void {
 fn size(this: *This) void {
     this.skipUntillDelimiter();
     const str = this.text[this.token_start..this.position];
+
     if (str.len != 2) @panic("report error");
+
     switch (str[1] | 0b00100000) {
         'b' => this.addToken(.byte_size),
         'w' => this.addToken(.word_size),
@@ -134,8 +139,10 @@ fn immediate(this: *This) void {
     const is_negative = this.skipIfEql('-');
     const base = this.consumeIfBase();
     this.skipUntillDelimiter();
+
     const offset: usize = 1 + @as(usize, @intFromBool(is_negative)) + @intFromBool(base != 10 and base != null);
     const str = this.text[this.token_start + offset .. this.position];
+
     if (base) |b| {
         if (std.fmt.parseUnsigned(u32, str, b)) |value| {
             if (is_negative) this.addToken(.minus);
@@ -147,6 +154,7 @@ fn immediate(this: *This) void {
 inline fn skipIfEql(this: *This, c: u8) bool {
     const is_eql = c == this.peek();
     this.position += @intFromBool(is_eql);
+
     return is_eql;
 }
 
@@ -199,22 +207,27 @@ fn comment(this: *This) void {
 fn registerOrMnemonicOrLabel(this: *This) void {
     this.skipUntillDelimiter();
     const str = this.text[this.token_start..this.position];
+
     if (this.parseRegister(str)) return;
+
     if (Token.mnemonicStrToType(str)) |mnemonic| {
         this.addToken(mnemonic);
         return;
     }
+
     this.addToken(.label);
 }
 
 fn parseRegister(this: *This, str: []const u8) bool {
     if (str.len != 2) return false;
     const num = std.fmt.parseUnsigned(u8, str[1..], 10) catch return false;
+
     const t = switch (str[0] | 0b00100000) {
         'd' => Token.Type.data_register,
         'a' => Token.Type.address_register,
         else => return false,
     };
+
     this.addTokenWithData(t, .{ .byte = num });
     return true;
 }
@@ -222,11 +235,11 @@ fn parseRegister(this: *This, str: []const u8) bool {
 fn stringOrChar(this: *This) void {
     while (this.position < this.text.len and this.consume() != '\'') {}
     const str = this.text[this.token_start..this.position];
-    if (str.len < 3) @panic("wtf"); // TODO REPORT ERROR
-    if (str.len == 3) {
-        this.addTokenWithData(.char, .{ .byte = str[1] });
-    } else {
-        this.addToken(.string);
+
+    switch (str.len) {
+        0...2 => @panic("wtf"), // TODO REPORT ERROR
+        3 => this.addTokenWithData(.char, .{ .byte = str[1] }),
+        else => this.addToken(.string),
     }
 }
 
@@ -238,6 +251,7 @@ fn absolute(this: *This) void {
     };
     this.skipUntillDelimiter();
     const str = this.text[this.token_start + @intFromBool(base != 10) .. this.position];
+
     if (std.fmt.parseUnsigned(u32, str, base)) |value| {
         this.addTokenWithData(.absolute, .{ .number = value });
     } else |_| @panic("report error"); //TODO report error

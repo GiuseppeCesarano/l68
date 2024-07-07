@@ -67,18 +67,21 @@ const mnemonics_map = struct {
     };
 
     const table = table: {
-        for (1..35) |size_multiplier| {
+        for (1..36) |size_multiplier| {
             const possible_table = generateSizedTableWithSeed(Type.mnemonics().len * size_multiplier);
             if (possible_table) |tbl| break :table .{ .data = tbl[0], .seed = tbl[1] };
         }
-        @compileError("mnemonics_map's size multiplier > 35");
+
+        @compileError("mnemonics_map's size multiplier > 36");
     };
 
     fn generateSizedTableWithSeed(comptime size: usize) ?struct { [size]Entry, u32 } {
         const mnemonics = Type.mnemonics();
-        for (0..15000) |seed| {
+
+        for (15000..30000) |seed| {
             @setEvalBranchQuota(std.math.maxInt(u32));
             var data = [_]Entry{.{ .whole = 0, .type = undefined }} ** size;
+
             for (mnemonics) |mnemonic| {
                 const whole, const part = encodeWholeAndPart(mnemonic.name);
                 const i = hash(part, seed, size);
@@ -91,14 +94,18 @@ const mnemonics_map = struct {
 
     fn encodeWholeAndPart(str: []const u8) struct { Whole, Part } {
         std.debug.assert(str.len > 1 and str.len < 8);
+
         const is_odd = str.len % 2 == 1;
         var whole: Whole = if (is_odd) @intCast(str[0] | 0x20) else 0;
         var i: usize = @as(usize, @intCast(@intFromBool(is_odd)));
+
         while (i != str.len) : (i += 2) {
             const wchar = @as(u16, str[i]) << 8 | str[i + 1];
             whole = (whole << 16) | (wchar | 0x2020);
         }
+
         const part: Part = @intCast(((whole >> @intCast(8 * (str.len - 2))) << 16) | (whole & 0xFFFF));
+
         return .{ whole, part };
     }
 
@@ -109,8 +116,10 @@ const mnemonics_map = struct {
 
     pub inline fn get(str: []const u8) ?Type {
         if (str.len < 2 or str.len > 7) return null;
+
         const whole, const part = encodeWholeAndPart(str);
         const token = table.data[hash(part, table.seed, table.data.len)];
+
         return if (token.whole == whole) token.type else null;
     }
 };
