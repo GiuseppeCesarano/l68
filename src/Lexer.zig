@@ -143,11 +143,9 @@ fn immediate(this: *This) void {
 
     if (fmt.parseSigned(this.text[this.token_start + 1 .. this.position])) |value| {
         this.addTokenWithData(.immediate, .{ .number = value });
-    } else |err| {
-        switch (err) {
-            std.fmt.ParseIntError.Overflow => @panic("TODO REPORT ERROR"), // TODO REPORT ERROR
-            std.fmt.ParseIntError.InvalidCharacter => this.addToken(.immediate_label),
-        }
+    } else |err| switch (err) {
+        std.fmt.ParseIntError.InvalidCharacter => this.addToken(.immediate_label),
+        std.fmt.ParseIntError.Overflow => @panic("TODO REPORT ERROR"), // TODO REPORT ERROR
     }
 }
 

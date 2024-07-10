@@ -44,7 +44,7 @@ test "CompactStringView slice" {
 }
 
 pub const fmt = struct {
-    pub fn parseSigned(str: []const u8) !u32 {
+    pub inline fn parseSigned(str: []const u8) !u32 {
         const is_negative = str[0] == '-';
 
         const value = try parseUnsigned(str[@intFromBool(is_negative)..]);
@@ -52,7 +52,7 @@ pub const fmt = struct {
         return if (is_negative) (~value) + 1 else value;
     }
 
-    pub fn parseUnsigned(str: []const u8) !u32 {
+    pub inline fn parseUnsigned(str: []const u8) !u32 {
         return switch (str[0]) {
             '%' => try std.fmt.parseUnsigned(u32, str[1..], 2),
             '@' => try std.fmt.parseUnsigned(u32, str[1..], 8),
