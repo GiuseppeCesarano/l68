@@ -1,5 +1,6 @@
 const std = @import("std");
 const Token = @import("Token");
+const fmt = @import("helpers").fmt;
 
 const This = @This();
 
@@ -136,52 +137,18 @@ fn size(this: *This) void {
 }
 
 fn immediate(this: *This) void {
-    const is_negative = this.skipIfEql('-');
-    const base = this.consumeIfBase();
+    this.position += @intFromBool(this.text[this.position] == '-');
+    this.position += @intFromBool(this.text[this.position] == '$' or this.text[this.position] == '%' or this.text[this.position] == '@');
     this.skipUntillDelimiter();
 
-    const offset: usize = 1 + @as(usize, @intFromBool(is_negative)) + @intFromBool(base != 10 and base != null);
-    const str = this.text[this.token_start + offset .. this.position];
-
-    if (base) |b| {
-        if (std.fmt.parseUnsigned(u32, str, b)) |value| {
-            if (is_negative) this.addToken(.minus);
-            this.addTokenWithData(.immediate, .{ .number = value });
-        } else |_| @panic("report error"); //TODO report
-    } else this.addToken(.immediate_label);
-}
-
-inline fn skipIfEql(this: *This, c: u8) bool {
-    const is_eql = c == this.peek();
-    this.position += @intFromBool(is_eql);
-
-    return is_eql;
-}
-
-fn consumeIfBase(this: *This) ?u8 {
-    switch (this.peek()) {
-        '%' => {
-            this.skip();
-            return 2;
-        },
-        '@' => {
-            this.skip();
-            return 8;
-        },
-        '0'...'9' => {
-            return 10;
-        },
-        '$' => {
-            this.skip();
-            return 16;
-        },
-        else => return null,
+    if (fmt.parseSigned(this.text[this.token_start + 1 .. this.position])) |value| {
+        this.addTokenWithData(.immediate, .{ .number = value });
+    } else |err| {
+        switch (err) {
+            std.fmt.ParseIntError.Overflow => @panic("TODO REPORT ERROR"), // TODO REPORT ERROR
+            std.fmt.ParseIntError.InvalidCharacter => this.addToken(.immediate_label),
+        }
     }
-}
-
-inline fn peek(this: This) u8 {
-    std.debug.assert(this.position < this.text.len);
-    return this.text[this.position];
 }
 
 inline fn skip(this: *This) void {
@@ -197,6 +164,11 @@ fn skipUntillDelimiter(this: *This) void {
     while (not_delimiter_map.isSet(this.peek())) {
         this.skip();
     }
+}
+
+inline fn peek(this: This) u8 {
+    std.debug.assert(this.position < this.text.len);
+    return this.text[this.position];
 }
 
 fn comment(this: *This) void {
@@ -244,15 +216,9 @@ fn stringOrChar(this: *This) void {
 }
 
 fn absolute(this: *This) void {
-    this.position -= 1;
-    const base = this.consumeIfBase() orelse b: {
-        this.skip();
-        break :b 10;
-    };
     this.skipUntillDelimiter();
-    const str = this.text[this.token_start + @intFromBool(base != 10) .. this.position];
 
-    if (std.fmt.parseUnsigned(u32, str, base)) |value| {
+    if (fmt.parseUnsigned(this.text[this.token_start..this.position])) |value| {
         this.addTokenWithData(.absolute, .{ .number = value });
     } else |_| @panic("report error"); //TODO report error
 }

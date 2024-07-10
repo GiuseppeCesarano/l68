@@ -23,6 +23,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    exe.root_module.addImport("helpers", helpers);
 
     b.installArtifact(exe);
     exe.root_module.addImport("Token", token);

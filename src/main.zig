@@ -27,12 +27,7 @@ pub fn main() !void {
     std.debug.print("{}\n", .{tokens.len});
     // std.debug.print("{}\n", .{@as(f64, @floatFromInt(tokens.len)) / @as(f64, @floatFromInt(file_content.len))});
     // const print = std.debug.print;
-    // var last_line: u32 = 0;
     // for (tokens) |token| {
-    //     if (last_line != token.location.line) {
-    //         last_line = token.location.line;
-    //         print("\n", .{});
-    //     }
     //     switch (token.type) {
     //         .label => print(" {s}", .{"PLACEHOLDER"}),
     //         .immediate => print(" #{}", .{token.data.number}),
@@ -52,6 +47,7 @@ pub fn main() !void {
     //         .long_size => print(".l", .{}),
     //         .data_register => print(" d{}", .{token.data.byte}),
     //         .address_register => print(" a{}", .{token.data.byte}),
+    //         .new_line => print("\n", .{}),
     //         else => print(" {s}", .{@tagName(token.type)}),
     //     }
     // }

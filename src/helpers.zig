@@ -42,3 +42,23 @@ test "CompactStringView slice" {
     try std.testing.expectEqual(sliceOffset[0], '3');
     try std.testing.expectEqual(sliceOffset[1], '4');
 }
+
+pub const fmt = struct {
+    pub fn parseSigned(str: []const u8) !u32 {
+        const is_negative = str[0] == '-';
+
+        const value = try parseUnsigned(str[@intFromBool(is_negative)..]);
+
+        return if (is_negative) (~value) + 1 else value;
+    }
+
+    pub fn parseUnsigned(str: []const u8) !u32 {
+        return switch (str[0]) {
+            '%' => try std.fmt.parseUnsigned(u32, str[1..], 2),
+            '@' => try std.fmt.parseUnsigned(u32, str[1..], 8),
+            '$' => try std.fmt.parseUnsigned(u32, str[1..], 16),
+            '0'...'9' => std.fmt.parseUnsigned(u32, str, 10),
+            else => return std.fmt.ParseIntError.InvalidCharacter,
+        };
+    }
+};
