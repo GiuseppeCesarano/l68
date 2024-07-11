@@ -43,6 +43,8 @@ test "CompactStringView slice" {
     try std.testing.expectEqual(sliceOffset[1], '4');
 }
 
+/// std.fmt.parseInt like functions, but they use u32 and can parse asimtool's prefixs
+/// the signed function returns u32 but does the base complement as asimtool does.
 pub const fmt = struct {
     pub inline fn parseSigned(str: []const u8) !u32 {
         const is_negative = str[0] == '-';
@@ -62,3 +64,98 @@ pub const fmt = struct {
         };
     }
 };
+
+//TODO COMPLETE WITH CONDITIONAL VARIABLE TO STOP THE SPINWAIT AFTHER A BIT
+pub fn Queue(T: type, size: comptime_int) type {
+    return struct {
+        const This = @This();
+
+        array: [2]struct { data: [size]T = undefined, used: usize } = .{ .{ .used = 0 }, .{ .used = size } },
+        empty: usize = 0,
+        indexes: packed struct { producer: u1 = 0, consumer: u1 = 1 } = .{},
+        is_consumer_done: std.atomic.Value(bool) = std.atomic.Value(bool).init(true),
+
+        pub fn int() This {
+            return This{};
+        }
+
+        /// Forces a swap of the arrays allowing the consumer to access the produced data even if used < data.len
+        /// The swap waits for the consumer to consume all the remaining data.
+        pub fn endProductionBatch(this: *This) void {
+            this.swap();
+        }
+
+        pub fn produce(this: *This, elm: T) void {
+            var array = this.getArray(.producer);
+
+            if (array.used == array.data.len) {
+                this.swap();
+                array = this.getArray(.producer);
+            }
+
+            array.data[array.used] = elm;
+            array.used += 1;
+        }
+
+        fn getArray(this: *This, comptime p_or_c: enum { producer, consumer }) *std.meta.Child(@TypeOf(this.array)) {
+            return if (p_or_c == .producer) &this.array[this.indexes.producer] else &this.array[this.indexes.consumer];
+        }
+
+        inline fn swap(this: *This) void {
+            while (!this.is_consumer_done.load(.acquire)) {
+                std.time.sleep(500);
+            }
+
+            const array = this.getArray(.producer);
+            this.empty = array.data.len - array.used;
+
+            this.indexes.producer ^= 1;
+            this.indexes.consumer ^= 1;
+            this.array[0].used = 0;
+            this.array[1].used = 0;
+
+            this.is_consumer_done.store(false, .release);
+        }
+
+        pub fn consume(this: *This) T {
+            var array = this.getArray(.consumer);
+
+            if (array.used == array.data.len - this.empty) {
+                this.waitSwap();
+                array = this.getArray(.consumer);
+            }
+
+            const r = array.data[array.used];
+            array.used += 1;
+            return r;
+        }
+
+        inline fn waitSwap(this: *This) void {
+            this.is_consumer_done.store(true, .release);
+            while (this.is_consumer_done.load(.acquire)) {
+                std.time.sleep(500);
+            }
+        }
+    };
+}
+
+fn testProduce(q: *Queue(u8, 20)) void {
+    var random = std.Random.Pcg.init(@intCast(std.time.timestamp()));
+    for (0..std.math.maxInt(u8)) |v| {
+        std.time.sleep(random.random().int(u64) % 2000);
+        q.produce(@intCast(v));
+    }
+    q.endProductionBatch();
+}
+
+test "Queue" {
+    var queue = Queue(u8, 20).int();
+
+    for (0..3) |_| {
+        const t = try std.Thread.spawn(.{}, testProduce, .{&queue});
+        for (0..std.math.maxInt(u8)) |v| {
+            try std.testing.expectEqual(v, queue.consume());
+        }
+        t.join();
+    }
+}
