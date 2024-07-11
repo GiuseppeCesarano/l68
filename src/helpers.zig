@@ -75,7 +75,7 @@ pub fn Queue(T: type, size: comptime_int) type {
         indexes: packed struct { producer: u1 = 0, consumer: u1 = 1 } = .{},
         is_consumer_done: std.atomic.Value(bool) = std.atomic.Value(bool).init(true),
 
-        pub fn int() This {
+        pub fn init() This {
             return This{};
         }
 
@@ -103,7 +103,7 @@ pub fn Queue(T: type, size: comptime_int) type {
 
         inline fn swap(this: *This) void {
             while (!this.is_consumer_done.load(.acquire)) {
-                std.time.sleep(500);
+                std.atomic.spinLoopHint();
             }
 
             const array = this.getArray(.producer);
@@ -133,7 +133,7 @@ pub fn Queue(T: type, size: comptime_int) type {
         inline fn waitSwap(this: *This) void {
             this.is_consumer_done.store(true, .release);
             while (this.is_consumer_done.load(.acquire)) {
-                std.time.sleep(500);
+                std.atomic.spinLoopHint();
             }
         }
     };
@@ -149,7 +149,7 @@ fn testProduce(q: *Queue(u8, 20)) void {
 }
 
 test "Queue" {
-    var queue = Queue(u8, 20).int();
+    var queue = Queue(u8, 20).init();
 
     for (0..3) |_| {
         const t = try std.Thread.spawn(.{}, testProduce, .{&queue});
