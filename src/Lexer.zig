@@ -89,7 +89,7 @@ fn addToken(this: *This, t: Token.Type) void {
 }
 
 fn computeRelativeString(this: This) std.meta.FieldType(Token, std.meta.FieldEnum(Token).relative_string) {
-    return .{ .offset = @intCast(this.position - this.line_start), .len = @intCast(this.position - this.token_start) };
+    return .{ .offset = @intCast(this.token_start - this.line_start), .len = @intCast(this.position - this.token_start) };
 }
 
 fn leftParentheses(this: *This) void {
@@ -117,9 +117,9 @@ fn divide(this: *This) void {
 }
 
 fn newLine(this: *This) void {
+    this.addTokenWithData(.new_line, .{ .number = this.line_start });
     this.line_number += 1;
     this.line_start = this.position;
-    this.addTokenWithData(.new_line, .{ .number = this.line_start });
 }
 
 fn size(this: *This) void {
