@@ -73,23 +73,23 @@ pub fn Queue(T: type, size: comptime_int) type {
         array: [2]struct { data: [size]T = undefined, used: usize } = .{ .{ .used = 0 }, .{ .used = size } },
         empty: usize = 0,
         indexes: packed struct { producer: u1 = 0, consumer: u1 = 1 } = .{},
-        is_consumer_done: std.atomic.Value(bool) = std.atomic.Value(bool).init(true),
+        is_ready_for_swap: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
         pub fn init() This {
             return This{};
         }
 
-        /// Forces a swap of the arrays allowing the consumer to access the produced data even if used < data.len
-        /// The swap waits for the consumer to consume all the remaining data.
+        /// Marks the end of a production batch.
+        /// If this function is not called the last `number_of_produced % size` elements will not be made aviable to the consumer
         pub fn endProductionBatch(this: *This) void {
-            this.swap();
+            this.is_ready_for_swap.store(true, .release);
         }
 
         pub fn produce(this: *This, elm: T) void {
             var array = this.getArray(.producer);
 
             if (array.used == array.data.len) {
-                this.swap();
+                this.waitSwap();
                 array = this.getArray(.producer);
             }
 
@@ -97,12 +97,32 @@ pub fn Queue(T: type, size: comptime_int) type {
             array.used += 1;
         }
 
-        fn getArray(this: *This, comptime p_or_c: enum { producer, consumer }) *std.meta.Child(@TypeOf(this.array)) {
+        inline fn waitSwap(this: *This) void {
+            this.is_ready_for_swap.store(true, .monotonic);
+            while (this.is_ready_for_swap.load(.acquire)) {
+                std.atomic.spinLoopHint();
+            }
+        }
+
+        inline fn getArray(this: *This, comptime p_or_c: enum { producer, consumer }) *std.meta.Child(@TypeOf(this.array)) {
             return if (p_or_c == .producer) &this.array[this.indexes.producer] else &this.array[this.indexes.consumer];
         }
 
+        pub fn consume(this: *This) T {
+            var array = this.getArray(.consumer);
+
+            if (array.used == array.data.len - this.empty) {
+                this.swap();
+                array = this.getArray(.consumer);
+            }
+
+            const r = array.data[array.used];
+            array.used += 1;
+            return r;
+        }
+
         inline fn swap(this: *This) void {
-            while (!this.is_consumer_done.load(.acquire)) {
+            while (!this.is_ready_for_swap.load(.acquire)) {
                 std.atomic.spinLoopHint();
             }
 
@@ -114,27 +134,7 @@ pub fn Queue(T: type, size: comptime_int) type {
             this.array[0].used = 0;
             this.array[1].used = 0;
 
-            this.is_consumer_done.store(false, .release);
-        }
-
-        pub fn consume(this: *This) T {
-            var array = this.getArray(.consumer);
-
-            if (array.used == array.data.len - this.empty) {
-                this.waitSwap();
-                array = this.getArray(.consumer);
-            }
-
-            const r = array.data[array.used];
-            array.used += 1;
-            return r;
-        }
-
-        inline fn waitSwap(this: *This) void {
-            this.is_consumer_done.store(true, .monotonic);
-            while (this.is_consumer_done.load(.acquire)) {
-                std.atomic.spinLoopHint();
-            }
+            this.is_ready_for_swap.store(false, .release);
         }
     };
 }
