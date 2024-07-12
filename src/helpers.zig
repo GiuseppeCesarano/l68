@@ -131,7 +131,7 @@ pub fn Queue(T: type, size: comptime_int) type {
         }
 
         inline fn waitSwap(this: *This) void {
-            this.is_consumer_done.store(true, .release);
+            this.is_consumer_done.store(true, .monotonic);
             while (this.is_consumer_done.load(.acquire)) {
                 std.atomic.spinLoopHint();
             }
@@ -140,9 +140,7 @@ pub fn Queue(T: type, size: comptime_int) type {
 }
 
 fn testProduce(q: *Queue(u8, 20)) void {
-    var random = std.Random.Pcg.init(@intCast(std.time.timestamp()));
     for (0..std.math.maxInt(u8)) |v| {
-        std.time.sleep(random.random().int(u64) % 2000);
         q.produce(@intCast(v));
     }
     q.endProductionBatch();
@@ -151,7 +149,7 @@ fn testProduce(q: *Queue(u8, 20)) void {
 test "Queue" {
     var queue = Queue(u8, 20).init();
 
-    for (0..3) |_| {
+    for (0..100) |_| {
         const t = try std.Thread.spawn(.{}, testProduce, .{&queue});
         for (0..std.math.maxInt(u8)) |v| {
             try std.testing.expectEqual(v, queue.consume());
