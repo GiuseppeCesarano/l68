@@ -74,15 +74,26 @@ pub fn Queue(T: type, size: comptime_int) type {
         empty: usize = 0,
         indexes: packed struct { producer: u1 = 0, consumer: u1 = 1 } = .{},
         is_ready_for_swap: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+        production_ended: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
+
+        pub const Errors = error{
+            ExcessiveConsume,
+        };
 
         pub fn init() This {
             return This{};
         }
 
-        /// Marks the end of a production batch.
-        /// If this function is not called the last `number_of_produced % size` elements will not be made aviable to the consumer
-        pub fn endProductionBatch(this: *This) void {
-            this.is_ready_for_swap.store(true, .release);
+        /// If this function is not called the last `number_of_produced % size` elements will not be made
+        /// aviable to the consumer untill `number_of_produced % size == 0`
+        pub fn flushProduction(this: *This) void {
+            const array = this.getArray(.producer);
+            if (array.used != 0) this.is_ready_for_swap.store(true, .release);
+        }
+
+        pub fn endProduction(this: *This) void {
+            this.flushProduction();
+            this.production_ended.store(true, .release);
         }
 
         pub fn produce(this: *This, elm: T) void {
@@ -105,13 +116,14 @@ pub fn Queue(T: type, size: comptime_int) type {
         }
 
         inline fn getArray(this: *This, comptime p_or_c: enum { producer, consumer }) *std.meta.Child(@TypeOf(this.array)) {
-            return if (p_or_c == .producer) &this.array[this.indexes.producer] else &this.array[this.indexes.consumer];
+            return &this.array[if (p_or_c == .producer) this.indexes.producer else this.indexes.consumer];
         }
 
-        pub fn consume(this: *This) T {
+        pub fn consume(this: *This) !T {
             var array = this.getArray(.consumer);
 
             if (array.used == array.data.len - this.empty) {
+                if (this.production_ended.load(.unordered) and !this.is_ready_for_swap.load(.unordered)) return Errors.ExcessiveConsume;
                 this.swap();
                 array = this.getArray(.consumer);
             }
@@ -126,11 +138,12 @@ pub fn Queue(T: type, size: comptime_int) type {
                 std.atomic.spinLoopHint();
             }
 
-            const array = this.getArray(.producer);
-            this.empty = array.data.len - array.used;
-
             this.indexes.producer ^= 1;
             this.indexes.consumer ^= 1;
+
+            const array = this.getArray(.consumer);
+            this.empty = array.data.len - array.used;
+
             this.array[0].used = 0;
             this.array[1].used = 0;
 
@@ -143,7 +156,7 @@ fn testProduce(q: *Queue(u8, 20)) void {
     for (0..std.math.maxInt(u8)) |v| {
         q.produce(@intCast(v));
     }
-    q.endProductionBatch();
+    q.flushProduction();
 }
 
 test "Queue" {
@@ -152,8 +165,11 @@ test "Queue" {
     for (0..100) |_| {
         const t = try std.Thread.spawn(.{}, testProduce, .{&queue});
         for (0..std.math.maxInt(u8)) |v| {
-            try std.testing.expectEqual(v, queue.consume());
+            try std.testing.expectEqual(v, try queue.consume());
         }
         t.join();
     }
+
+    queue.endProduction();
+    try std.testing.expectError(@TypeOf(queue).Errors.ExcessiveConsume, queue.consume());
 }
