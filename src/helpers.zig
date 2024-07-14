@@ -72,7 +72,7 @@ pub fn Queue(T: type, size: comptime_int) type {
 
         array: [2]struct { data: [size]T = undefined, used: usize } = .{ .{ .used = 0 }, .{ .used = size } },
         empty: usize = 0,
-        indexes: packed struct { producer: u1 = 0, consumer: u1 = 1 } = .{},
+        index: u1 = 0,
         is_ready_for_swap: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
         production_ended: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
@@ -116,7 +116,7 @@ pub fn Queue(T: type, size: comptime_int) type {
         }
 
         inline fn getArray(this: *This, comptime p_or_c: enum { producer, consumer }) *std.meta.Child(@TypeOf(this.array)) {
-            return &this.array[if (p_or_c == .producer) this.indexes.producer else this.indexes.consumer];
+            return &this.array[if (p_or_c == .producer) this.index else ~this.index];
         }
 
         pub fn consume(this: *This) !T {
@@ -138,8 +138,7 @@ pub fn Queue(T: type, size: comptime_int) type {
                 std.atomic.spinLoopHint();
             }
 
-            this.indexes.producer ^= 1;
-            this.indexes.consumer ^= 1;
+            this.index ^= 1;
 
             const array = this.getArray(.consumer);
             this.empty = array.data.len - array.used;
