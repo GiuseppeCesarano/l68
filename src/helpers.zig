@@ -91,6 +91,10 @@ pub fn Queue(T: type, size: comptime_int) type {
             if (array.used != 0) this.is_ready_for_swap.store(true, .release);
         }
 
+        inline fn getArray(this: *This, comptime p_or_c: enum { producer, consumer }) *std.meta.Child(@TypeOf(this.array)) {
+            return &this.array[this.index ^ @intFromBool(p_or_c == .consumer)];
+        }
+
         pub fn endProduction(this: *This) void {
             this.flushProduction();
             this.production_ended.store(true, .release);
@@ -113,10 +117,6 @@ pub fn Queue(T: type, size: comptime_int) type {
             while (this.is_ready_for_swap.load(.acquire)) {
                 std.atomic.spinLoopHint();
             }
-        }
-
-        inline fn getArray(this: *This, comptime p_or_c: enum { producer, consumer }) *std.meta.Child(@TypeOf(this.array)) {
-            return &this.array[if (p_or_c == .producer) this.index else ~this.index];
         }
 
         pub fn consume(this: *This) !T {
