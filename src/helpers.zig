@@ -65,8 +65,7 @@ pub const fmt = struct {
     }
 };
 
-//TODO COMPLETE WITH CONDITIONAL VARIABLE TO STOP THE SPINWAIT AFTHER A BIT
-pub fn Queue(T: type, size: comptime_int) type {
+pub fn SwapQueue(T: type, size: comptime_int) type {
     return struct {
         const This = @This();
 
@@ -77,7 +76,7 @@ pub fn Queue(T: type, size: comptime_int) type {
         production_ended: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
 
         pub const Errors = error{
-            ExcessiveConsume,
+            OverConsumption,
         };
 
         pub fn init() This {
@@ -114,7 +113,7 @@ pub fn Queue(T: type, size: comptime_int) type {
 
         inline fn waitSwap(this: *This) void {
             this.is_ready_for_swap.store(true, .monotonic);
-            while (this.is_ready_for_swap.load(.acquire)) {
+            while (this.is_ready_for_swap.load(.unordered)) {
                 std.atomic.spinLoopHint();
             }
         }
@@ -123,18 +122,19 @@ pub fn Queue(T: type, size: comptime_int) type {
             var array = this.getArray(.consumer);
 
             if (array.used == array.data.len - this.empty) {
-                if (this.production_ended.load(.unordered) and !this.is_ready_for_swap.load(.unordered)) return Errors.ExcessiveConsume;
+                if (this.production_ended.load(.unordered) and !this.is_ready_for_swap.load(.unordered)) return Errors.OverConsumption;
                 this.swap();
                 array = this.getArray(.consumer);
             }
 
             const r = array.data[array.used];
             array.used += 1;
+
             return r;
         }
 
         inline fn swap(this: *This) void {
-            while (!this.is_ready_for_swap.load(.acquire)) {
+            while (!this.is_ready_for_swap.load(.unordered)) {
                 std.atomic.spinLoopHint();
             }
 
@@ -151,7 +151,7 @@ pub fn Queue(T: type, size: comptime_int) type {
     };
 }
 
-fn testProduce(q: *Queue(u8, 20)) void {
+fn testProduce(T: type, q: *T) void {
     for (0..std.math.maxInt(u8)) |v| {
         q.produce(@intCast(v));
     }
@@ -159,10 +159,10 @@ fn testProduce(q: *Queue(u8, 20)) void {
 }
 
 test "Queue" {
-    var queue = Queue(u8, 20).init();
+    var queue = SwapQueue(u8, 20).init();
 
     for (0..100) |_| {
-        const t = try std.Thread.spawn(.{}, testProduce, .{&queue});
+        const t = try std.Thread.spawn(.{}, testProduce, .{ @TypeOf(queue), &queue });
         for (0..std.math.maxInt(u8)) |v| {
             try std.testing.expectEqual(v, try queue.consume());
         }
@@ -170,5 +170,5 @@ test "Queue" {
     }
 
     queue.endProduction();
-    try std.testing.expectError(@TypeOf(queue).Errors.ExcessiveConsume, queue.consume());
+    try std.testing.expectError(@TypeOf(queue).Errors.OverConsumption, queue.consume());
 }
