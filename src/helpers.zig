@@ -127,10 +127,9 @@ pub fn SwapQueue(T: type, size: comptime_int) type {
                 array = this.getArray(.consumer);
             }
 
-            const r = array.data[array.used];
             array.used += 1;
 
-            return r;
+            return array.data[array.used - 1];
         }
 
         inline fn swap(this: *This) void {
