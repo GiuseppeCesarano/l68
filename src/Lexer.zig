@@ -121,7 +121,7 @@ fn size(this: *This) void {
 
     if (str.len != 2) @panic("report error");
 
-    switch (str[1] | 0b00100000) {
+    switch (str[1] | 0x20) {
         'b' => this.addToken(.byte_size),
         'w' => this.addToken(.word_size),
         'l' => this.addToken(.long_size),
@@ -184,7 +184,7 @@ fn parseRegister(this: *This, str: []const u8) bool {
     if (str.len != 2) return false;
     const num = std.fmt.parseUnsigned(u8, str[1..], 10) catch return false;
 
-    const t = switch (str[0] | 0b00100000) {
+    const t = switch (str[0] | 0x20) {
         'd' => Token.Type.data_register,
         'a' => Token.Type.address_register,
         else => return false,
