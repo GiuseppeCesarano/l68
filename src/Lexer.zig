@@ -4,8 +4,10 @@ const fmt = @import("helpers").fmt;
 
 const This = @This();
 
+pub const OutputQueue = @import("helpers").SwapQueue(Token, 40);
+
 text: []const u8,
-tokens: std.ArrayList(Token),
+tokens: OutputQueue,
 token_start: u32 = 0,
 line_number: u32 = 0,
 line_start: u32 = 0,
@@ -50,25 +52,19 @@ const scan_map = map: {
     break :map kvs;
 };
 
-pub fn init(text: []const u8, allocator: std.mem.Allocator) This {
-    const tokens_len: usize = @intFromFloat(@ceil(@as(f64, @floatFromInt(text.len)) * 0.43));
-    return .{
-        .text = text,
-        .tokens = std.ArrayList(Token).initCapacity(allocator, tokens_len) catch @panic("Could not allocate memory for lexing"),
-    };
+pub fn init(text: []const u8) This {
+    return .{ .text = text, .tokens = OutputQueue.init() };
 }
 
-pub fn deinit(this: This) void {
-    this.tokens.deinit();
-}
+pub fn deinit(_: This) void {}
 
-pub fn scan(this: *This) []Token {
+pub fn scan(this: *This) void {
     while (this.position != this.text.len) {
         this.token_start = this.position;
         if (scan_map[this.consume()]) |scan_fn| scan_fn(this);
     }
 
-    return this.tokens.items;
+    this.tokens.endProduction();
 }
 
 inline fn consume(this: *This) u8 {
@@ -81,11 +77,8 @@ fn comma(this: *This) void {
 }
 
 fn addToken(this: *This, t: Token.Type) void {
-    if (this.tokens.capacity == this.tokens.items.len) @panic("TODO FIX ME (Branch predictor wrong)");
-
-    const ptr = this.tokens.addOneAssumeCapacity();
-    ptr.type = t;
-    ptr.relative_string = this.computeRelativeString();
+    //TODO assign via ptr
+    this.tokens.produce(.{ .type = t, .relative_string = this.computeRelativeString(), .data = undefined });
 }
 
 fn computeRelativeString(this: This) std.meta.FieldType(Token, std.meta.FieldEnum(Token).relative_string) {
@@ -154,8 +147,7 @@ inline fn skip(this: *This) void {
 }
 
 inline fn addTokenWithData(this: *This, t: Token.Type, data: Token.Data) void {
-    if (this.tokens.capacity == this.tokens.items.len) @panic("TODO FIX ME (Branch predictor wrong)");
-    this.tokens.appendAssumeCapacity(.{ .type = t, .data = data, .relative_string = this.computeRelativeString() });
+    this.tokens.produce(.{ .type = t, .data = data, .relative_string = this.computeRelativeString() });
 }
 
 fn skipUntillDelimiter(this: *This) void {
