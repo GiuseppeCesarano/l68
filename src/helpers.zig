@@ -8,8 +8,8 @@ const std = @import("std");
 /// This type only supports strings <= 4MiB
 /// The max lenght for for the string view is 1024
 pub const CompactStringView = packed struct {
-    offset: u22,
-    len: u10,
+    offset: u16,
+    len: u8,
 
     pub fn toSlice(this: @This(), str: []const u8) []const u8 {
         std.debug.assert(this.offset <= str.len);
@@ -46,20 +46,24 @@ test "CompactStringView slice" {
 /// std.fmt.parseInt like functions, but they use u32 and can parse asimtool's prefixs
 /// the signed function returns u32 but does the base complement as asimtool does.
 pub const fmt = struct {
-    pub inline fn parseSigned(str: []const u8) !u32 {
+    pub inline fn parseSigned(comptime T: type, str: []const u8) !T {
+        if (@typeInfo(T).Int.signedness != .unsigned) @compileError("Passed type must be always unsigned, even for signed rappresentation.");
+        if (str.len == 0) return std.fmt.ParseIntError.InvalidCharacter;
         const is_negative = str[0] == '-';
 
-        const value = try parseUnsigned(str[@intFromBool(is_negative)..]);
+        const value = try parseUnsigned(T, str[@intFromBool(is_negative)..]);
 
         return if (is_negative) (~value) + 1 else value;
     }
 
-    pub inline fn parseUnsigned(str: []const u8) !u32 {
+    pub inline fn parseUnsigned(comptime T: type, str: []const u8) !T {
+        if (@typeInfo(T).Int.signedness != .unsigned) @compileError("Passed type must be always unsigned");
+        if (str.len == 0) return std.fmt.ParseIntError.InvalidCharacter;
         return switch (str[0]) {
-            '%' => try std.fmt.parseUnsigned(u32, str[1..], 2),
-            '@' => try std.fmt.parseUnsigned(u32, str[1..], 8),
-            '$' => try std.fmt.parseUnsigned(u32, str[1..], 16),
-            '0'...'9' => std.fmt.parseUnsigned(u32, str, 10),
+            '%' => try std.fmt.parseUnsigned(T, str[1..], 2),
+            '@' => try std.fmt.parseUnsigned(T, str[1..], 8),
+            '$' => try std.fmt.parseUnsigned(T, str[1..], 16),
+            '0'...'9' => std.fmt.parseUnsigned(T, str, 10),
             else => return std.fmt.ParseIntError.InvalidCharacter,
         };
     }
@@ -99,7 +103,7 @@ pub fn SwapQueue(T: type, size: comptime_int) type {
             this.production_ended.store(true, .release);
         }
 
-        pub fn produce(this: *This, elm: T) void {
+        pub fn addOne(this: *This) *T {
             var array = this.getArray(.producer);
 
             if (array.used == array.data.len) {
@@ -107,13 +111,19 @@ pub fn SwapQueue(T: type, size: comptime_int) type {
                 array = this.getArray(.producer);
             }
 
-            array.data[array.used] = elm;
+            const position = &array.data[array.used];
             array.used += 1;
+
+            return position;
+        }
+
+        pub fn produce(this: *This, elm: T) void {
+            this.addOne().* = elm;
         }
 
         inline fn waitSwap(this: *This) void {
             this.is_ready_for_swap.store(true, .monotonic);
-            while (this.is_ready_for_swap.load(.unordered)) {
+            while (this.is_ready_for_swap.load(.acquire)) {
                 std.atomic.spinLoopHint();
             }
         }
@@ -122,7 +132,7 @@ pub fn SwapQueue(T: type, size: comptime_int) type {
             var array = this.getArray(.consumer);
 
             if (array.used == array.data.len - this.empty) {
-                if (this.production_ended.load(.unordered) and !this.is_ready_for_swap.load(.unordered)) return Errors.OverConsumption;
+                if (!this.is_ready_for_swap.load(.acquire) and this.production_ended.load(.acquire)) return Errors.OverConsumption;
                 this.swap();
                 array = this.getArray(.consumer);
             }
@@ -133,7 +143,7 @@ pub fn SwapQueue(T: type, size: comptime_int) type {
         }
 
         inline fn swap(this: *This) void {
-            while (!this.is_ready_for_swap.load(.unordered)) {
+            while (!this.is_ready_for_swap.load(.acquire)) {
                 std.atomic.spinLoopHint();
             }
 

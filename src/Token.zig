@@ -2,8 +2,16 @@ const std = @import("std");
 const CompactStringView = @import("helpers").CompactStringView;
 
 pub const Data = packed union {
-    number: u32,
-    byte: u8,
+    Number: u32,
+    Register: u3,
+    Char: u8,
+    SimpleAddressing: packed struct { register: u3, displacement: i16 },
+    ComplexAddressing: packed struct {
+        address_register: u3,
+        displacement: i16,
+        index_type: enum(u1) { data, address },
+        index_register: u3,
+    },
 };
 
 pub const Type = enum(u8) {
@@ -17,20 +25,20 @@ pub const Type = enum(u8) {
 
     // Single charchater tokens
     comma,
-    left_parentheses,
-    right_parentheses,
-    plus,
-    minus,
-    multiply,
     new_line,
-    divide,
 
     // Dual charchater tokens
-    byte_size,
-    word_size,
-    long_size,
-    data_register,
-    address_register,
+    B,
+    W,
+    L,
+    Dn,
+    An,
+
+    @"(An)",
+    @"(An)+",
+    @"-(An)",
+    @"(d,An)",
+    @"(d,An,Xi)",
 
     // mnemonics (must be ketp sequential)
     // zig fmt: off
@@ -99,6 +107,7 @@ const mnemonics_map = struct {
         var whole: Whole = if (is_odd) @intCast(str[0] | 0x20) else 0;
         var i: usize = @as(usize, @intCast(@intFromBool(is_odd)));
 
+        //TODO: use a []const u16 when the language will supports casting from []const u8 to []const u16
         while (i != str.len) : (i += 2) {
             const wchar = @as(u16, str[i]) << 8 | str[i + 1];
             whole = (whole << 16) | (wchar | 0x2020);
