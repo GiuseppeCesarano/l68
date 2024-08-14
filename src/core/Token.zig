@@ -1,5 +1,5 @@
 const std = @import("std");
-const CompactStringView = @import("helpers").CompactStringView;
+const CompactStringView = @import("CompactStringView");
 
 pub const Data = packed union {
     Number: u32,

@@ -1,10 +1,10 @@
 const std = @import("std");
 const Token = @import("Token");
-const fmt = @import("helpers").fmt;
+const fmt = @import("fmt");
 
 const This = @This();
 
-pub const OutputQueue = @import("helpers").SwapQueue(Token, 50);
+pub const OutputQueue = @import("SwapQueue").create(Token, 50);
 
 text: []const u8,
 tokens: OutputQueue,

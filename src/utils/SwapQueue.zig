@@ -1,75 +1,6 @@
-//! This module provides a variety of miscellaneous structures
-//! and functions utilized throughout the entirety of the codebase.
-
 const std = @import("std");
 
-/// A 32 bit sized type designed to be a compact alternative to `[] const u8`
-/// The offset must be referenced to a known string.
-/// This type only supports strings <= 4MiB
-/// The max lenght for for the string view is 1024
-pub const CompactStringView = packed struct {
-    offset: u16,
-    len: u8,
-
-    pub fn toSlice(this: @This(), str: []const u8) []const u8 {
-        std.debug.assert(this.offset <= str.len);
-        std.debug.assert(this.offset + this.len <= str.len);
-        return str[this.offset .. this.offset + this.len];
-    }
-
-    pub fn toSliceWithOffset(this: @This(), str: []const u8, offset: usize) []const u8 {
-        std.debug.assert(this.offset + offset <= str.len);
-        std.debug.assert(this.offset + offset + this.len <= str.len);
-        return str[this.offset + offset .. this.offset + offset + this.len];
-    }
-};
-
-test "CompactStringView size test" {
-    try std.testing.expectEqual(@bitSizeOf(CompactStringView), 32);
-}
-
-test "CompactStringView slice" {
-    const s = "01234";
-    const sw = CompactStringView{ .offset = 2, .len = 2 };
-
-    const slice = sw.toSlice(s);
-    try std.testing.expectEqual(slice.len, 2);
-    try std.testing.expectEqual(slice[0], '2');
-    try std.testing.expectEqual(slice[1], '3');
-
-    const sliceOffset = sw.toSliceWithOffset(s, 1);
-    try std.testing.expectEqual(sliceOffset.len, 2);
-    try std.testing.expectEqual(sliceOffset[0], '3');
-    try std.testing.expectEqual(sliceOffset[1], '4');
-}
-
-/// std.fmt.parseInt like functions, but they use u32 and can parse asimtool's prefixs
-/// the signed function returns u32 but does the base complement as asimtool does.
-pub const fmt = struct {
-    pub inline fn parseSigned(comptime T: type, str: []const u8) !T {
-        if (@typeInfo(T).Int.signedness != .unsigned) @compileError("Passed type must be always unsigned, even for signed rappresentation.");
-        if (str.len == 0) return std.fmt.ParseIntError.InvalidCharacter;
-        const is_negative = str[0] == '-';
-
-        const value = try parseUnsigned(T, str[@intFromBool(is_negative)..]);
-
-        return if (is_negative) (~value) + 1 else value;
-    }
-
-    pub inline fn parseUnsigned(comptime T: type, str: []const u8) !T {
-        if (@typeInfo(T).Int.signedness != .unsigned) @compileError("Passed type must be always unsigned");
-        if (str.len == 0) return std.fmt.ParseIntError.InvalidCharacter;
-        return switch (str[0]) {
-            '%' => try std.fmt.parseUnsigned(T, str[1..], 2),
-            '@' => try std.fmt.parseUnsigned(T, str[1..], 8),
-            '$' => try std.fmt.parseUnsigned(T, str[1..], 16),
-            '0'...'9' => std.fmt.parseUnsigned(T, str, 10),
-            else => return std.fmt.ParseIntError.InvalidCharacter,
-        };
-    }
-};
-
-pub fn SwapQueue(T: type, size: comptime_int) type {
+pub fn create(T: type, size: comptime_int) type {
     return struct {
         const This = @This();
 
@@ -168,7 +99,7 @@ fn testProduce(T: type, q: *T) void {
 }
 
 test "Queue" {
-    var queue = SwapQueue(u8, 20).init();
+    var queue = create(u8, 20).init();
 
     for (0..100) |_| {
         const t = try std.Thread.spawn(.{}, testProduce, .{ @TypeOf(queue), &queue });

@@ -1,5 +1,5 @@
 const std = @import("std");
-const Lexer = @import("Lexer.zig");
+const Lexer = @import("Lexer");
 
 fn getFirstArg(allocator: std.mem.Allocator) [:0]const u8 {
     var args_it = std.process.argsWithAllocator(allocator) catch @panic("error: Could not allocate memory to parse arguments.");
