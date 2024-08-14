@@ -1,10 +1,10 @@
 const std = @import("std");
-const Token = @import("Token");
+const token = @import("token");
 const fmt = @import("fmt");
 
 const This = @This();
 
-pub const OutputQueue = @import("SwapQueue").create(Token, 50);
+pub const OutputQueue = @import("SwapQueue").create(token.Info, 50);
 
 text: []const u8,
 tokens: OutputQueue,
@@ -199,7 +199,7 @@ fn registerOrMnemonicOrLabel(this: *This) void {
 
     if (tryRegister(str)) |reg| {
         this.addTokenWithData(reg.type, reg.data);
-    } else if (Token.mnemonicStrToType(str)) |mnemonic| {
+    } else if (token.Type.fromString(str)) |mnemonic| {
         this.addToken(mnemonic);
     } else this.addToken(.label);
 }
@@ -224,13 +224,13 @@ inline fn consume(this: *This) u8 {
     return this.text[this.position - 1];
 }
 
-fn addToken(this: *This, t: Token.Type) void {
+fn addToken(this: *This, t: token.Type) void {
     const ptr = this.tokens.addOne();
     ptr.type = t;
     ptr.relative_string = this.computeRelativeString();
 }
 
-fn computeRelativeString(this: This) std.meta.FieldType(Token, std.meta.FieldEnum(Token).relative_string) {
+fn computeRelativeString(this: This) std.meta.FieldType(token.Info, std.meta.FieldEnum(token.Info).relative_string) {
     return .{ .offset = @intCast(this.token_start - this.line_start), .len = @intCast(this.position - this.token_start) };
 }
 
@@ -239,7 +239,7 @@ inline fn peek(this: This) u8 {
     return this.text[this.position];
 }
 
-inline fn register(this: *This) ?Token {
+inline fn register(this: *This) ?token.Info {
     this.skipWhiteSpaces();
 
     const key_start = this.position;
@@ -261,13 +261,13 @@ fn skipUntilDelimiter(this: *This) void {
     }
 }
 
-fn tryRegister(str: []const u8) ?Token {
+fn tryRegister(str: []const u8) ?token.Info {
     if (str.len != 2) return null;
     const num = std.fmt.parseUnsigned(u3, str[1..], 10) catch return null;
 
     const t = switch (str[0] | 0x20) {
-        'd' => Token.Type.Dn,
-        'a' => Token.Type.An,
+        'd' => token.Type.Dn,
+        'a' => token.Type.An,
         else => return null,
     };
 
@@ -297,6 +297,6 @@ inline fn skip(this: *This) void {
     this.position += 1;
 }
 
-inline fn addTokenWithData(this: *This, t: Token.Type, data: Token.Data) void {
+inline fn addTokenWithData(this: *This, t: token.Type, data: token.Data) void {
     this.tokens.produce(.{ .type = t, .data = data, .relative_string = this.computeRelativeString() });
 }

@@ -10,8 +10,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const compactStringView = b.addModule("CompactStringView", .{
-        .root_source_file = b.path(("src/utils/CompactStringView.zig")),
+    const compact = b.addModule("compact", .{
+        .root_source_file = b.path(("src/utils/compact.zig")),
         .target = target,
         .optimize = optimize,
     });
@@ -22,19 +22,19 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const token = b.addModule("Token", .{
-        .root_source_file = b.path(("src/core/Token.zig")),
+    const token = b.addModule("token", .{
+        .root_source_file = b.path(("src/core/token.zig")),
         .target = target,
         .optimize = optimize,
     });
-    token.addImport("CompactStringView", compactStringView);
+    token.addImport("compact", compact);
 
     const lexer = b.addModule("Lexer", .{
         .root_source_file = b.path(("src/core/Lexer.zig")),
         .target = target,
         .optimize = optimize,
     });
-    lexer.addImport("Token", token);
+    lexer.addImport("token", token);
     lexer.addImport("fmt", fmt);
     lexer.addImport("SwapQueue", swapQueue);
 
@@ -45,7 +45,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     exe.root_module.addImport("Lexer", lexer);
-    exe.root_module.addImport("Token", token);
+    exe.root_module.addImport("token", token);
 
     b.installArtifact(exe);
 
@@ -60,13 +60,39 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/helpers.zig"),
+    // Tests
+    const compact_test = b.addTest(.{
+        .root_source_file = b.path("src/utils/compact.zig"),
         .target = target,
         .optimize = optimize,
     });
+    const run_compact_test = b.addRunArtifact(compact_test);
 
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+    const fmt_test = b.addTest(.{
+        .root_source_file = b.path("src/utils/fmt.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const run_fmt_test = b.addRunArtifact(fmt_test);
+
+    const swapQueue_test = b.addTest(.{
+        .root_source_file = b.path("src/utils/SwapQueue.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const run_swapQueue_test = b.addRunArtifact(swapQueue_test);
+
+    const token_test = b.addTest(.{
+        .root_source_file = b.path("src/core/token.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    token_test.root_module.addImport("compact", compact);
+    const run_token_test = b.addRunArtifact(token_test);
+
     const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_exe_unit_tests.step);
+    test_step.dependOn(&run_compact_test.step);
+    test_step.dependOn(&run_fmt_test.step);
+    test_step.dependOn(&run_swapQueue_test.step);
+    test_step.dependOn(&run_token_test.step);
 }

@@ -1,5 +1,5 @@
 const std = @import("std");
-const CompactStringView = @import("CompactStringView");
+const StringView = @import("compact").StringView;
 
 pub const Data = packed union {
     Number: u32,
@@ -63,6 +63,10 @@ pub const Type = enum(u8) {
 
     pub fn mnemonics() []const std.builtin.Type.EnumField {
         return @typeInfo(@This()).Enum.fields[@intFromEnum(@This().abcd)..];
+    }
+
+    pub fn fromString(str: []const u8) ?Type {
+        return mnemonics_map.get(str);
     }
 };
 
@@ -131,12 +135,18 @@ const mnemonics_map = struct {
 
         return if (token.whole == whole) token.type else null;
     }
+
+    test "mnemonic_map's entry size" {
+        try std.testing.expect(@bitSizeOf(Entry) == 64);
+    }
 };
 
-type: Type,
-data: Data,
-relative_string: CompactStringView,
+pub const Info = packed struct {
+    type: Type,
+    data: Data,
+    relative_string: StringView,
 
-pub fn mnemonicStrToType(str: []const u8) ?Type {
-    return mnemonics_map.get(str);
-}
+    test "Token.Info's size" {
+        try std.testing.expect(@bitSizeOf(@This()) == 64);
+    }
+};
