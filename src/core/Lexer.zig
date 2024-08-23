@@ -117,12 +117,15 @@ fn absoluteOrAddressingOrMath(this: *This) InputError!void {
 fn addressingOrMath(this: *This) InputError!void {
     const displacement: i16 = d: {
         this.skipWhiteSpaces();
+
         if (this.getNumber(i16)) |n| {
             this.skipWhiteSpaces();
+
             if (this.consume() != ',') {
                 this.math();
                 return;
             }
+
             break :d n;
         } else |_| {
             this.position = this.token_start + 1;
@@ -131,25 +134,25 @@ fn addressingOrMath(this: *This) InputError!void {
     };
 
     this.skipWhiteSpaces();
+
     if (this.getRegister()) |address_register| {
         if (address_register.type != .An) return InputError.Generic;
         this.skipWhiteSpaces();
+
         switch (this.consume()) {
             ')' => {
-                if (displacement != 0) {
-                    this.addTokenWithData(.@"(d,An)", .{ .SimpleAddressing = .{
-                        .register = address_register.data.Register,
-                        .displacement = displacement,
-                    } });
-                } else {
+                if (displacement == 0) {
                     const is_post_incr = this.peek() == '+';
                     this.position += @intFromBool(is_post_incr);
                     this.addTokenWithData(if (is_post_incr) .@"(An)+" else .@"(An)", address_register.data);
+                } else {
+                    this.addTokenWithData(.@"(d,An)", .{ .SimpleAddressing = .{ .register = address_register.data.Register, .displacement = displacement } });
                 }
             },
             ',' => {
                 this.skipWhiteSpaces();
                 const index_register = this.getRegister() orelse return InputError.Generic;
+
                 this.addTokenWithData(.@"(d,An,Xi)", .{ .ComplexAddressing = .{
                     .displacement = displacement,
                     .address_register = address_register.data.Register,
@@ -163,11 +166,7 @@ fn addressingOrMath(this: *This) InputError!void {
 
             else => return InputError.Generic,
         }
-
-        return;
-    }
-
-    this.math();
+    } else return InputError.Generic;
 }
 
 fn newLine(this: *This) InputError!void {
