@@ -74,20 +74,22 @@ fn comma(this: *This) void {
 
 fn absoluteOrAddressingOrMath(this: *This) void {
     this.position = this.token_start;
-    const numOrDisplacement = this.number() catch |err| switch (err) {
-        std.fmt.ParseIntError.InvalidCharacter => @as(u32, @bitCast(@as(i32, -1))),
+    const num_or_displacement = this.number(i64) catch |err| switch (err) {
+        fmt.Error.InvalidCharacter => -1,
         else => @panic("???"),
     };
 
     if (this.peek() != '(') {
-        this.addTokenWithData(.absolute, .{ .Number = numOrDisplacement });
+        if (num_or_displacement < 0) @panic("can't be < 0");
+        this.addTokenWithData(.absolute, .{ .Number = @truncate(@as(u64, @bitCast(num_or_displacement))) });
 
         return;
     }
 
     this.skip();
+    this.skipWhiteSpaces();
     if (this.register()) |address_register| {
-        const displacement: i16 = @bitCast(@as(u16, @intCast(0x0000FFFF & numOrDisplacement)));
+        const displacement = std.math.cast(i16, num_or_displacement) orelse @panic("");
         switch (displacement) {
             -1 => this.addTokenWithData(.@"-(An)", address_register.data),
             1 => this.addTokenWithData(.@"(An)+", address_register.data),
@@ -107,26 +109,27 @@ fn absoluteOrAddressingOrMath(this: *This) void {
 }
 
 fn addressingOrMath(this: *This) void {
-    const displacement_or_null: ?i16 = d: {
+    const displacement: i16 = d: {
         this.skipWhiteSpaces();
-        if (this.number()) |n| {
+        if (this.number(i16)) |n| {
             this.skipWhiteSpaces();
             if (this.consume() != ',') {
                 this.math();
                 return;
             }
-            break :d @bitCast(@as(u16, @intCast(n & 0x0000FFFFF)));
+            break :d n;
         } else |_| {
             this.position = this.token_start + 1;
-            break :d null;
+            break :d 0;
         }
     };
 
+    this.skipWhiteSpaces();
     if (this.register()) |address_register| {
         this.skipWhiteSpaces();
         switch (this.consume()) {
             ')' => {
-                if (displacement_or_null) |displacement| {
+                if (displacement != 0) {
                     this.addTokenWithData(.@"(d,An)", .{ .SimpleAddressing = .{
                         .register = address_register.data.Register,
                         .displacement = displacement,
@@ -138,9 +141,10 @@ fn addressingOrMath(this: *This) void {
                 }
             },
             ',' => {
+                this.skipWhiteSpaces();
                 const index_register = this.register() orelse @panic("Addressing malformed");
                 this.addTokenWithData(.@"(d,An,Xi)", .{ .ComplexAddressing = .{
-                    .displacement = displacement_or_null orelse 0,
+                    .displacement = displacement,
                     .address_register = address_register.data.Register,
                     .index_type = if (index_register.type == .An) .address else .data,
                     .index_register = index_register.data.Register,
@@ -180,11 +184,11 @@ fn size(this: *This) void {
 }
 
 fn immediate(this: *This) void {
-    if (this.number()) |n| {
-        this.addTokenWithData(.immediate, .{ .Number = n });
+    if (this.number(i64)) |n| {
+        this.addTokenWithData(.immediate, .{ .Number = @truncate(@as(u64, @bitCast(n))) });
     } else |err| switch (err) {
-        std.fmt.ParseIntError.InvalidCharacter => this.addToken(.immediate_label),
-        std.fmt.ParseIntError.Overflow => @panic("TODO REPORT ERROR"),
+        fmt.Error.InvalidCharacter => this.addToken(.immediate_label),
+        fmt.Error.Overflow => @panic("TODO REPORT ERROR"),
     }
 }
 
@@ -240,12 +244,10 @@ inline fn peek(this: This) u8 {
 }
 
 inline fn register(this: *This) ?token.Info {
-    this.skipWhiteSpaces();
-
-    const key_start = this.position;
+    const start = this.position;
     this.skipUntilDelimiter();
 
-    return tryRegister(this.text[key_start..this.position]);
+    return tryRegister(this.text[start..this.position]);
 }
 
 fn skipWhiteSpaces(this: *This) void {
@@ -274,8 +276,8 @@ fn tryRegister(str: []const u8) ?token.Info {
     return .{ .type = t, .data = .{ .Register = num }, .relative_string = undefined };
 }
 
-inline fn number(this: *This) !u32 {
-    const key_start = this.position;
+inline fn number(this: *This, comptime T: type) fmt.Error!T {
+    const start = this.position;
 
     this.position += @intFromBool(this.peek() == '-');
     this.position += switch (this.peek()) {
@@ -284,13 +286,11 @@ inline fn number(this: *This) !u32 {
     };
     this.skipUntilDelimiter();
 
-    return tryNumber(this.text[key_start..this.position]);
+    return fmt.parse(T, this.text[start..this.position]);
 }
 
-fn math(_: *This) void {}
-
-inline fn tryNumber(str: []const u8) !u32 {
-    return fmt.parseSigned(u32, str);
+fn math(_: *This) void {
+    @panic("math not supported");
 }
 
 inline fn skip(this: *This) void {
