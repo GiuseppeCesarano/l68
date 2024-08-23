@@ -81,34 +81,33 @@ fn comma(this: *This) InputError!void {
 
 fn absoluteOrAddressingOrMath(this: *This) InputError!void {
     this.position = this.token_start;
-    const num_or_displacement = this.getNumber(i64) catch |err| switch (err) {
+
+    const displacement_or_number = this.getNumber(i64) catch |err| switch (err) {
         fmt.Error.InvalidCharacter => if (this.text[this.token_start] == '-' and this.text[this.token_start + 1] == '(') -1 else return InputError.Generic,
         else => return InputError.Generic,
     };
 
     if (this.peek() != '(') {
-        this.addTokenWithData(.absolute, .{ .Number = @truncate(@as(u64, @bitCast(num_or_displacement))) });
-
+        const number: u32 = @truncate(@as(u64, @bitCast(displacement_or_number)));
+        this.addTokenWithData(.absolute, .{ .Number = number });
         return;
     }
-    this.skip();
 
+    this.skip();
     this.skipWhiteSpaces();
+
     if (this.getRegister()) |address_register| {
         if (address_register.type != .An) return InputError.Generic;
-        const displacement = std.math.cast(i16, num_or_displacement) orelse return InputError.Generic;
+        const displacement = std.math.cast(i16, displacement_or_number) orelse return InputError.Generic;
+
         switch (displacement) {
             -1 => this.addTokenWithData(.@"-(An)", address_register.data),
             1 => this.addTokenWithData(.@"(An)+", address_register.data),
-            else => this.addTokenWithData(.@"(d,An)", .{ .SimpleAddressing = .{
-                .register = address_register.data.Register,
-                .displacement = displacement,
-            } }),
+            else => this.addTokenWithData(.@"(d,An)", .{ .SimpleAddressing = .{ .register = address_register.data.Register, .displacement = displacement } }),
         }
 
         this.skipWhiteSpaces();
         if (this.consume() != ')') return InputError.Generic;
-
         return;
     }
 
