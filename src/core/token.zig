@@ -65,7 +65,7 @@ pub const Type = enum(u8) {
         return @typeInfo(@This()).Enum.fields[@intFromEnum(@This().abcd)..];
     }
 
-    pub fn fromString(str: []const u8) ?Type {
+    pub fn mnemonicFromString(str: []const u8) ?Type {
         return mnemonics_map.get(str);
     }
 };
@@ -137,7 +137,7 @@ const mnemonics_map = struct {
     }
 
     test "mnemonic_map's entry size" {
-        try std.testing.expect(@bitSizeOf(Entry) == 64);
+        try std.testing.expectEqual(@bitSizeOf(Entry), 64);
     }
 };
 
@@ -147,6 +147,6 @@ pub const Info = packed struct {
     relative_string: StringView,
 
     test "Token.Info's size" {
-        try std.testing.expect(@bitSizeOf(@This()) == 64);
+        try std.testing.expectEqual(@bitSizeOf(@This()), 64);
     }
 };

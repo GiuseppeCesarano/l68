@@ -13,6 +13,10 @@ line_number: u32 = 0,
 line_start: u32 = 0,
 position: u32 = 0,
 
+const InputError = error{
+    Generic,
+};
+
 const not_delimiter_map = set: {
     const len = std.math.maxInt(u8) + 1;
     var bitset = std.bit_set.StaticBitSet(len).initEmpty();
@@ -29,7 +33,7 @@ const not_delimiter_map = set: {
 };
 
 const scan_map = map: {
-    var kvs: [std.math.maxInt(u8) + 1]?*const fn (*This) void = undefined;
+    var kvs: [std.math.maxInt(u8) + 1]?*const fn (*This) InputError!void = undefined;
 
     for (&kvs, 0..) |*value, key| {
         value.* = switch (key) {
@@ -62,34 +66,37 @@ pub fn deinit(_: This) void {}
 pub fn scan(this: *This) void {
     while (this.position != this.text.len) {
         this.token_start = this.position;
-        if (scan_map[this.consume()]) |scan_fn| scan_fn(this);
+        if (scan_map[this.consume()]) |scan_fn| {
+            scan_fn(this) catch |err|
+                std.debug.print("Error Line: {}\n{s}: {s}\n", .{ this.line_start + 1, @errorName(err), this.text[this.token_start..this.position] });
+        }
     }
 
     this.tokens.endProduction();
 }
 
-fn comma(this: *This) void {
+fn comma(this: *This) InputError!void {
     this.addToken(.comma);
 }
 
-fn absoluteOrAddressingOrMath(this: *This) void {
+fn absoluteOrAddressingOrMath(this: *This) InputError!void {
     this.position = this.token_start;
-    const num_or_displacement = this.number(i64) catch |err| switch (err) {
-        fmt.Error.InvalidCharacter => -1,
-        else => @panic("???"),
+    const num_or_displacement = this.getNumber(i64) catch |err| switch (err) {
+        fmt.Error.InvalidCharacter => if (this.text[this.token_start] == '-' and this.text[this.token_start + 1] == '(') -1 else return InputError.Generic,
+        else => return InputError.Generic,
     };
 
     if (this.peek() != '(') {
-        if (num_or_displacement < 0) @panic("can't be < 0");
         this.addTokenWithData(.absolute, .{ .Number = @truncate(@as(u64, @bitCast(num_or_displacement))) });
 
         return;
     }
-
     this.skip();
+
     this.skipWhiteSpaces();
-    if (this.register()) |address_register| {
-        const displacement = std.math.cast(i16, num_or_displacement) orelse @panic("");
+    if (this.getRegister()) |address_register| {
+        if (address_register.type != .An) return InputError.Generic;
+        const displacement = std.math.cast(i16, num_or_displacement) orelse return InputError.Generic;
         switch (displacement) {
             -1 => this.addTokenWithData(.@"-(An)", address_register.data),
             1 => this.addTokenWithData(.@"(An)+", address_register.data),
@@ -100,7 +107,7 @@ fn absoluteOrAddressingOrMath(this: *This) void {
         }
 
         this.skipWhiteSpaces();
-        if (this.consume() != ')') @panic("addressing malformed");
+        if (this.consume() != ')') return InputError.Generic;
 
         return;
     }
@@ -108,10 +115,10 @@ fn absoluteOrAddressingOrMath(this: *This) void {
     this.math();
 }
 
-fn addressingOrMath(this: *This) void {
+fn addressingOrMath(this: *This) InputError!void {
     const displacement: i16 = d: {
         this.skipWhiteSpaces();
-        if (this.number(i16)) |n| {
+        if (this.getNumber(i16)) |n| {
             this.skipWhiteSpaces();
             if (this.consume() != ',') {
                 this.math();
@@ -125,7 +132,8 @@ fn addressingOrMath(this: *This) void {
     };
 
     this.skipWhiteSpaces();
-    if (this.register()) |address_register| {
+    if (this.getRegister()) |address_register| {
+        if (address_register.type != .An) return InputError.Generic;
         this.skipWhiteSpaces();
         switch (this.consume()) {
             ')' => {
@@ -142,7 +150,7 @@ fn addressingOrMath(this: *This) void {
             },
             ',' => {
                 this.skipWhiteSpaces();
-                const index_register = this.register() orelse @panic("Addressing malformed");
+                const index_register = this.getRegister() orelse return InputError.Generic;
                 this.addTokenWithData(.@"(d,An,Xi)", .{ .ComplexAddressing = .{
                     .displacement = displacement,
                     .address_register = address_register.data.Register,
@@ -151,10 +159,10 @@ fn addressingOrMath(this: *This) void {
                 } });
 
                 this.skipWhiteSpaces();
-                if (this.consume() != ')') @panic("Addressing malformed");
+                if (this.consume() != ')') return InputError.Generic;
             },
 
-            else => @panic("addressing malformed"),
+            else => return InputError.Generic,
         }
 
         return;
@@ -163,69 +171,68 @@ fn addressingOrMath(this: *This) void {
     this.math();
 }
 
-fn newLine(this: *This) void {
+fn newLine(this: *This) InputError!void {
     this.addTokenWithData(.new_line, .{ .Number = this.line_start });
     this.line_number += 1;
     this.line_start = this.position;
 }
 
-fn size(this: *This) void {
+fn size(this: *This) InputError!void {
     this.skipUntilDelimiter();
     const str = this.text[this.token_start..this.position];
 
-    if (str.len != 2) @panic("report error");
+    if (str.len != 2) return InputError.Generic;
 
     switch (str[1] | 0x20) {
         'b' => this.addToken(.B),
         'w' => this.addToken(.W),
         'l' => this.addToken(.L),
-        else => @panic("report error"),
+        else => return InputError.Generic,
     }
 }
 
-fn immediate(this: *This) void {
-    if (this.number(i64)) |n| {
+fn immediate(this: *This) InputError!void {
+    if (this.getNumber(i64)) |n| {
         this.addTokenWithData(.immediate, .{ .Number = @truncate(@as(u64, @bitCast(n))) });
     } else |err| switch (err) {
         fmt.Error.InvalidCharacter => this.addToken(.immediate_label),
-        fmt.Error.Overflow => @panic("TODO REPORT ERROR"),
+        fmt.Error.Overflow => return InputError.Generic,
     }
 }
 
-fn comment(this: *This) void {
+fn comment(this: *This) InputError!void {
     while (this.position != this.text.len and this.consume() != '\n') {}
-    this.newLine();
+    try this.newLine();
 }
 
-fn registerOrMnemonicOrLabel(this: *This) void {
+fn registerOrMnemonicOrLabel(this: *This) InputError!void {
     this.skipUntilDelimiter();
     const str = this.text[this.token_start..this.position];
 
-    if (tryRegister(str)) |reg| {
+    if (registerFromString(str)) |reg| {
         this.addTokenWithData(reg.type, reg.data);
-    } else if (token.Type.fromString(str)) |mnemonic| {
+    } else if (token.Type.mnemonicFromString(str)) |mnemonic| {
         this.addToken(mnemonic);
     } else this.addToken(.label);
 }
 
-fn stringOrChar(this: *This) void {
-    while (this.position < this.text.len and this.consume() != '\'') {}
+fn stringOrChar(this: *This) InputError!void {
+    while (this.position != this.text.len and this.consume() != '\'') {}
     const str = this.text[this.token_start..this.position];
 
     switch (str.len) {
-        0...2 => @panic("wtf"),
+        0...2 => return InputError.Generic,
         3 => this.addTokenWithData(.char, .{ .Char = str[1] }),
         else => this.addToken(.string),
     }
 }
 
-fn unexpectedToken(_: *This) void {
-    @panic("Token not expected");
+fn unexpectedToken(_: *This) InputError!void {
+    return InputError.Generic;
 }
 
-inline fn consume(this: *This) u8 {
-    this.position += 1;
-    return this.text[this.position - 1];
+fn math(_: *This) void {
+    @panic("math not supported");
 }
 
 fn addToken(this: *This, t: token.Type) void {
@@ -234,36 +241,48 @@ fn addToken(this: *This, t: token.Type) void {
     ptr.relative_string = this.computeRelativeString();
 }
 
-fn computeRelativeString(this: This) std.meta.FieldType(token.Info, std.meta.FieldEnum(token.Info).relative_string) {
+inline fn addTokenWithData(this: *This, t: token.Type, data: token.Data) void {
+    this.tokens.produce(.{ .type = t, .data = data, .relative_string = this.computeRelativeString() });
+}
+
+fn computeRelativeString(this: This) std.meta.FieldType(token.Info, .relative_string) {
     return .{ .offset = @intCast(this.token_start - this.line_start), .len = @intCast(this.position - this.token_start) };
 }
 
+inline fn consume(this: *This) u8 {
+    this.position += 1;
+    return this.text[this.position - 1];
+}
+
 inline fn peek(this: This) u8 {
-    std.debug.assert(this.position < this.text.len);
     return this.text[this.position];
 }
 
-inline fn register(this: *This) ?token.Info {
-    const start = this.position;
-    this.skipUntilDelimiter();
+fn skipUntilDelimiter(this: *This) void {
+    while (this.position != this.text.len and not_delimiter_map.isSet(this.peek())) {
+        this.skip();
+    }
+}
 
-    return tryRegister(this.text[start..this.position]);
+inline fn skip(this: *This) void {
+    this.position += 1;
 }
 
 fn skipWhiteSpaces(this: *This) void {
     var c = this.peek();
-    while (c == ' ' or c == '\t' or c == '\n' or c == '\r') : (c = this.peek()) {
+    while (this.position != this.text.len and (c == ' ' or c == '\t' or c == '\n' or c == '\r')) : (c = this.peek()) {
         this.skip();
     }
 }
 
-fn skipUntilDelimiter(this: *This) void {
-    while (not_delimiter_map.isSet(this.peek())) {
-        this.skip();
-    }
+inline fn getRegister(this: *This) ?token.Info {
+    const start = this.position;
+    this.skipUntilDelimiter();
+
+    return registerFromString(this.text[start..this.position]);
 }
 
-fn tryRegister(str: []const u8) ?token.Info {
+fn registerFromString(str: []const u8) ?token.Info {
     if (str.len != 2) return null;
     const num = std.fmt.parseUnsigned(u3, str[1..], 10) catch return null;
 
@@ -276,7 +295,7 @@ fn tryRegister(str: []const u8) ?token.Info {
     return .{ .type = t, .data = .{ .Register = num }, .relative_string = undefined };
 }
 
-inline fn number(this: *This, comptime T: type) fmt.Error!T {
+inline fn getNumber(this: *This, comptime T: type) fmt.Error!T {
     const start = this.position;
 
     this.position += @intFromBool(this.peek() == '-');
@@ -286,17 +305,9 @@ inline fn number(this: *This, comptime T: type) fmt.Error!T {
     };
     this.skipUntilDelimiter();
 
-    return fmt.parse(T, this.text[start..this.position]);
+    return numberFromString(T, this.text[start..this.position]);
 }
 
-fn math(_: *This) void {
-    @panic("math not supported");
-}
-
-inline fn skip(this: *This) void {
-    this.position += 1;
-}
-
-inline fn addTokenWithData(this: *This, t: token.Type, data: token.Data) void {
-    this.tokens.produce(.{ .type = t, .data = data, .relative_string = this.computeRelativeString() });
+fn numberFromString(comptime T: type, str: []const u8) !T {
+    return fmt.parse(T, str);
 }
