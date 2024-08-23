@@ -38,14 +38,23 @@ pub fn build(b: *std.Build) void {
     lexer.addImport("fmt", fmt);
     lexer.addImport("SwapQueue", swapQueue);
 
+    const parser = b.addModule("Parser", .{
+        .root_source_file = b.path(("src/core/Parser.zig")),
+        .target = target,
+        .optimize = optimize,
+    });
+    parser.addImport("token", token);
+    parser.addImport("Lexer", lexer);
+
     const exe = b.addExecutable(.{
         .name = "l68",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
-    exe.root_module.addImport("Lexer", lexer);
     exe.root_module.addImport("token", token);
+    exe.root_module.addImport("Lexer", lexer);
+    exe.root_module.addImport("Parser", parser);
 
     b.installArtifact(exe);
 
