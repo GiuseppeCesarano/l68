@@ -109,7 +109,7 @@ const mnemonics_map = struct {
 
         const is_odd = str.len % 2 == 1;
         var whole: Whole = if (is_odd) @intCast(str[0] | 0x20) else 0;
-        var i: usize = @as(usize, @intCast(@intFromBool(is_odd)));
+        var i: usize = @intFromBool(is_odd);
 
         //TODO: use a []const u16 when the language will supports casting from []const u8 to []const u16
         while (i != str.len) : (i += 2) {

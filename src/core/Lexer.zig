@@ -68,7 +68,7 @@ pub fn scan(this: *This) void {
         this.token_start = this.position;
         if (scan_map[this.consume()]) |scan_fn| {
             scan_fn(this) catch |err|
-                std.debug.print("Error Line: {}\n{s}: {s}\n", .{ this.line_start + 1, @errorName(err), this.text[this.token_start..this.position] });
+                std.debug.print("Error Line:{}\n{s}:{s}\n", .{ this.line_number + 1, @errorName(err), this.text[this.token_start..this.position] });
         }
     }
 
@@ -83,8 +83,14 @@ fn absoluteOrAddressingOrMath(this: *This) InputError!void {
     this.position = this.token_start;
 
     const displacement_or_number = this.getNumber(i64) catch |err| switch (err) {
-        fmt.Error.InvalidCharacter => if (this.text[this.token_start] == '-' and this.text[this.token_start + 1] == '(') -1 else return InputError.Generic,
-        else => return InputError.Generic,
+        fmt.Error.InvalidCharacter => if (this.text[this.token_start] == '-' and this.text[this.token_start + 1] == '(') -1 else {
+            this.position += 1;
+            return InputError.Generic;
+        },
+        else => {
+            this.position += 1;
+            return InputError.Generic;
+        },
     };
 
     if (this.peek() != '(') {
