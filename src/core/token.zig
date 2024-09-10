@@ -62,7 +62,7 @@ pub const Type = enum(u8) {
     // zig fmt: on
 
     pub fn mnemonics() []const std.builtin.Type.EnumField {
-        return @typeInfo(@This()).Enum.fields[@intFromEnum(@This().abcd)..];
+        return @typeInfo(@This()).@"enum".fields[@intFromEnum(@This().abcd)..];
     }
 
     pub fn mnemonicFromString(str: []const u8) ?Type {
