@@ -3,8 +3,9 @@ const std = @import("std");
 pub fn create(T: type, size: comptime_int) type {
     return struct {
         const This = @This();
+        const Buffer = struct { data: [size]T = undefined, used: usize };
 
-        array: [2]struct { data: [size]T = undefined, used: usize } = .{ .{ .used = 0 }, .{ .used = size } },
+        buffers: [2]Buffer = .{ .{ .used = 0 }, .{ .used = size } },
         empty: usize = 0,
         index: u1 = 0,
         is_ready_for_swap: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
@@ -18,15 +19,43 @@ pub fn create(T: type, size: comptime_int) type {
             return This{};
         }
 
+        pub fn produce(this: *This, elm: T) void {
+            this.addOne().* = elm;
+        }
+
+        pub fn addOne(this: *This) *T {
+            var buffer = this.getBuffer(.producer);
+
+            if (buffer.used == buffer.data.len) {
+                this.waitBuffersSwap();
+                buffer = this.getBuffer(.producer);
+            }
+
+            const position = &buffer.data[buffer.used];
+            buffer.used += 1;
+
+            return position;
+        }
+
+        pub fn consume(this: *This) !T {
+            var buffer = this.getBuffer(.consumer);
+
+            if (buffer.used == buffer.data.len - this.empty) {
+                if (!this.is_ready_for_swap.load(.acquire) and this.production_ended.load(.acquire)) return Errors.OverConsumption;
+                this.swapBuffers();
+                buffer = this.getBuffer(.consumer);
+            }
+
+            buffer.used += 1;
+
+            return buffer.data[buffer.used - 1];
+        }
+
         /// If this function is not called the last `number_of_produced % size` elements will not be made
         /// aviable to the consumer untill `number_of_produced % size == 0`
         pub fn flushProduction(this: *This) void {
-            const array = this.getArray(.producer);
-            if (array.used != 0) this.is_ready_for_swap.store(true, .release);
-        }
-
-        inline fn getArray(this: *This, comptime p_or_c: enum { producer, consumer }) *std.meta.Child(@TypeOf(this.array)) {
-            return &this.array[this.index ^ @intFromBool(p_or_c == .consumer)];
+            const buffer = this.getBuffer(.producer);
+            if (buffer.used != 0) this.is_ready_for_swap.store(true, .release);
         }
 
         pub fn endProduction(this: *This) void {
@@ -34,59 +63,31 @@ pub fn create(T: type, size: comptime_int) type {
             this.production_ended.store(true, .release);
         }
 
-        pub fn addOne(this: *This) *T {
-            var array = this.getArray(.producer);
-
-            if (array.used == array.data.len) {
-                this.waitSwap();
-                array = this.getArray(.producer);
-            }
-
-            const position = &array.data[array.used];
-            array.used += 1;
-
-            return position;
-        }
-
-        pub fn produce(this: *This, elm: T) void {
-            this.addOne().* = elm;
-        }
-
-        inline fn waitSwap(this: *This) void {
+        inline fn waitBuffersSwap(this: *This) void {
             this.is_ready_for_swap.store(true, .monotonic);
             while (this.is_ready_for_swap.load(.acquire)) {
                 std.atomic.spinLoopHint();
             }
         }
 
-        pub fn consume(this: *This) !T {
-            var array = this.getArray(.consumer);
-
-            if (array.used == array.data.len - this.empty) {
-                if (!this.is_ready_for_swap.load(.acquire) and this.production_ended.load(.acquire)) return Errors.OverConsumption;
-                this.swap();
-                array = this.getArray(.consumer);
-            }
-
-            array.used += 1;
-
-            return array.data[array.used - 1];
-        }
-
-        inline fn swap(this: *This) void {
+        inline fn swapBuffers(this: *This) void {
             while (!this.is_ready_for_swap.load(.acquire)) {
                 std.atomic.spinLoopHint();
             }
 
             this.index ^= 1;
 
-            const array = this.getArray(.consumer);
-            this.empty = array.data.len - array.used;
+            const buffer = this.getBuffer(.consumer);
+            this.empty = buffer.data.len - buffer.used;
 
-            this.array[0].used = 0;
-            this.array[1].used = 0;
+            this.buffers[0].used = 0;
+            this.buffers[1].used = 0;
 
             this.is_ready_for_swap.store(false, .release);
+        }
+
+        inline fn getBuffer(this: *This, comptime p_or_c: enum { producer, consumer }) *Buffer {
+            return &this.buffers[this.index ^ @intFromBool(p_or_c == .consumer)];
         }
     };
 }
