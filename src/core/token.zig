@@ -71,11 +71,10 @@ pub const Type = enum(u8) {
 };
 
 const mnemonics_map = struct {
-    const Whole = u56;
-    const Part = u32;
+    const EncodedMnemonic = u56;
     const Entry = packed struct {
-        whole: Whole,
         type: Type,
+        encoded_mnemonic: EncodedMnemonic,
     };
 
     const table = table: {
@@ -92,48 +91,45 @@ const mnemonics_map = struct {
 
         for (15000..30000) |seed| {
             @setEvalBranchQuota(std.math.maxInt(u32));
-            var data = [_]Entry{.{ .whole = 0, .type = undefined }} ** size;
+            var data = [_]Entry{.{ .encoded_mnemonic = 0, .type = undefined }} ** size;
 
             for (mnemonics) |mnemonic| {
-                const whole, const part = encodeWholeAndPart(mnemonic.name);
-                const i = hash(part, seed, size);
-                if (data[i].whole != 0) break;
-                data[i] = Entry{ .whole = whole, .type = @enumFromInt(mnemonic.value) };
+                const encoded_mnemonic = encode(mnemonic.name);
+                const i = hash(encoded_mnemonic, seed, size);
+                if (data[i].encoded_mnemonic != 0) break;
+                data[i] = Entry{ .encoded_mnemonic = encoded_mnemonic, .type = @enumFromInt(mnemonic.value) };
             } else return .{ data, seed };
         }
         return null;
     }
 
-    fn encodeWholeAndPart(str: []const u8) struct { Whole, Part } {
+    fn encode(str: []const u8) EncodedMnemonic {
         std.debug.assert(str.len > 1 and str.len < 8);
 
         const is_odd = str.len % 2 == 1;
-        var whole: Whole = if (is_odd) @intCast(str[0] | 0x20) else 0;
+        var value: EncodedMnemonic = if (is_odd) @intCast(str[0] | 0x20) else 0;
         var i: usize = @intFromBool(is_odd);
 
-        //TODO: use a []const u16 when the language will supports casting from []const u8 to []const u16
+        //TODO: use a @ptrCast to []const u16 when the language will supports size changing casting.
         while (i != str.len) : (i += 2) {
             const wchar = @as(u16, str[i]) << 8 | str[i + 1];
-            whole = (whole << 16) | (wchar | 0x2020);
+            value = (value << 16) | (wchar | 0x2020);
         }
 
-        const part: Part = @intCast(((whole >> @intCast(8 * (str.len - 2))) << 16) | (whole & 0xFFFF));
-
-        return .{ whole, part };
+        return value;
     }
 
-    fn hash(input: Part, seed: u32, comptime len: usize) usize {
-        const fp = input ^ seed;
-        return (fp ^ (fp << 1)) % len;
+    inline fn hash(input: EncodedMnemonic, comptime seed: u32, comptime len: usize) usize {
+        return std.hash.Murmur2_64.hashUint64WithSeed(@intCast(input), @intCast(seed)) % len;
     }
 
-    pub inline fn get(str: []const u8) ?Type {
+    pub fn get(str: []const u8) ?Type {
         if (str.len < 2 or str.len > 7) return null;
 
-        const whole, const part = encodeWholeAndPart(str);
-        const token = table.data[hash(part, table.seed, table.data.len)];
+        const encoded_mnemonic = encode(str);
+        const token = table.data[hash(encoded_mnemonic, table.seed, table.data.len)];
 
-        return if (token.whole == whole) token.type else null;
+        return if (token.encoded_mnemonic == encoded_mnemonic) token.type else null;
     }
 
     test "mnemonic_map's entry size" {
