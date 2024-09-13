@@ -61,79 +61,25 @@ pub const Type = enum(u8) {
     unlk,
     // zig fmt: on
 
-    pub fn mnemonics() []const std.builtin.Type.EnumField {
-        return @typeInfo(@This()).@"enum".fields[@intFromEnum(@This().abcd)..];
+    fn countMnemonics() usize {
+        return @typeInfo(@This()).@"enum".fields[@intFromEnum(@This().abcd)..].len;
     }
 
-    pub fn mnemonicFromString(str: []const u8) ?Type {
-        return mnemonics_map.get(str);
-    }
-};
+    pub fn mnemonicsAsKeyValues() [countMnemonics()]struct { [7]u8, Type } {
+        const Kv = struct { [7]u8, Type };
+        var kvs = [_]Kv{.{ [7]u8{ 0, 0, 0, 0, 0, 0, 0 }, undefined }} ** countMnemonics();
+        const base = @intFromEnum(@This().abcd);
 
-const mnemonics_map = struct {
-    const EncodedMnemonic = u56;
-    const Entry = packed struct {
-        type: Type,
-        encoded_mnemonic: EncodedMnemonic,
-    };
+        for (&kvs, 0..) |*kv, i| {
+            kv[1] = @enumFromInt(base + i);
 
-    const table = table: {
-        for (1..36) |size_multiplier| {
-            const possible_table = generateSizedTableWithSeed(Type.mnemonics().len * size_multiplier);
-            if (possible_table) |tbl| break :table .{ .data = tbl[0], .seed = tbl[1] };
+            const name = @tagName(kv[1]);
+            std.debug.assert(name.len < 8);
+
+            std.mem.copyForwards(u8, &kv[0], name);
         }
 
-        @compileError("mnemonics_map's size multiplier > 36");
-    };
-
-    fn generateSizedTableWithSeed(comptime size: usize) ?struct { [size]Entry, u32 } {
-        const mnemonics = Type.mnemonics();
-
-        for (15000..30000) |seed| {
-            @setEvalBranchQuota(std.math.maxInt(u32));
-            var data = [_]Entry{.{ .encoded_mnemonic = 0, .type = undefined }} ** size;
-
-            for (mnemonics) |mnemonic| {
-                const encoded_mnemonic = encode(mnemonic.name);
-                const i = hash(encoded_mnemonic, seed, size);
-                if (data[i].encoded_mnemonic != 0) break;
-                data[i] = Entry{ .encoded_mnemonic = encoded_mnemonic, .type = @enumFromInt(mnemonic.value) };
-            } else return .{ data, seed };
-        }
-        return null;
-    }
-
-    fn encode(str: []const u8) EncodedMnemonic {
-        std.debug.assert(str.len > 1 and str.len < 8);
-
-        const is_odd = str.len % 2 == 1;
-        var value: EncodedMnemonic = if (is_odd) @intCast(str[0] | 0x20) else 0;
-        var i: usize = @intFromBool(is_odd);
-
-        //TODO: use a @ptrCast to []const u16 when the language will supports size changing casting.
-        while (i != str.len) : (i += 2) {
-            const wchar = @as(u16, str[i]) << 8 | str[i + 1];
-            value = (value << 16) | (wchar | 0x2020);
-        }
-
-        return value;
-    }
-
-    inline fn hash(input: EncodedMnemonic, comptime seed: u32, comptime len: usize) usize {
-        return std.hash.Murmur2_64.hashUint64WithSeed(@intCast(input), @intCast(seed)) % len;
-    }
-
-    pub fn get(str: []const u8) ?Type {
-        if (str.len < 2 or str.len > 7) return null;
-
-        const encoded_mnemonic = encode(str);
-        const token = table.data[hash(encoded_mnemonic, table.seed, table.data.len)];
-
-        return if (token.encoded_mnemonic == encoded_mnemonic) token.type else null;
-    }
-
-    test "mnemonic_map's entry size" {
-        try std.testing.expectEqual(@bitSizeOf(Entry), 64);
+        return kvs;
     }
 };
 

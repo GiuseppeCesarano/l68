@@ -1,6 +1,7 @@
 const std = @import("std");
 const token = @import("token");
 const fmt = @import("fmt");
+const PerfectMap = @import("PerfectMap");
 
 const This = @This();
 
@@ -15,6 +16,12 @@ position: u32 = 0,
 
 const InputError = error{
     Generic,
+};
+
+const mnemonic_map = mnmap: {
+    const mnemonics = token.Type.mnemonicsAsKeyValues();
+    const seed, const sz = PerfectMap.bruteforceSeedAndSize(mnemonics);
+    break :mnmap PerfectMap.create(seed, sz, mnemonics);
 };
 
 const not_delimiter_map = set: {
@@ -215,7 +222,7 @@ fn registerOrMnemonicOrLabel(this: *This) InputError!void {
 
     if (registerFromString(str)) |reg| {
         this.addTokenWithData(reg.type, reg.data);
-    } else if (token.Type.mnemonicFromString(str)) |mnemonic| {
+    } else if (mnemonic_map.get(str)) |mnemonic| {
         this.addToken(mnemonic);
     } else this.addToken(.label);
 }

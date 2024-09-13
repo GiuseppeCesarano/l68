@@ -16,8 +16,14 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const swapQueue = b.addModule("SwapQueue", .{
+    const swap_queue = b.addModule("SwapQueue", .{
         .root_source_file = b.path(("src/utils/SwapQueue.zig")),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const perfect_map = b.addModule("PerfectMap", .{
+        .root_source_file = b.path(("src/utils/PerfectMap.zig")),
         .target = target,
         .optimize = optimize,
     });
@@ -36,7 +42,8 @@ pub fn build(b: *std.Build) void {
     });
     lexer.addImport("token", token);
     lexer.addImport("fmt", fmt);
-    lexer.addImport("SwapQueue", swapQueue);
+    lexer.addImport("SwapQueue", swap_queue);
+    lexer.addImport("PerfectMap", perfect_map);
 
     const parser = b.addModule("Parser", .{
         .root_source_file = b.path(("src/core/Parser.zig")),
