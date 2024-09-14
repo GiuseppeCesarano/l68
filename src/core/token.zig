@@ -67,7 +67,7 @@ pub const Type = enum(u8) {
 
     pub fn mnemonicsAsKeyValues() [countMnemonics()]struct { [7]u8, Type } {
         const Kv = struct { [7]u8, Type };
-        var kvs = [_]Kv{.{ [7]u8{ 0, 0, 0, 0, 0, 0, 0 }, undefined }} ** countMnemonics();
+        var kvs = [_]Kv{.{ [_]u8{0} ** 7, undefined }} ** countMnemonics();
         const base = @intFromEnum(@This().abcd);
 
         for (&kvs, 0..) |*kv, i| {
