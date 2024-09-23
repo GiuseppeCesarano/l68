@@ -40,13 +40,13 @@ pub const Type = enum(u8) {
     @"(d,An)",
     @"(d,An,Xi)",
 
+    // TODO check dcb, expand bcc, missing divu
     // mnemonics (must be ketp sequential)
     // zig fmt: off
     abcd, add, adda, addi, addq, @"and", andi, asl, asr,
     bcc, bchg, bclr, bra, bset, bsr, btst,
-    chk, clr,
-    cmp, cmpa, cmpi, cmpm,
-    dbcc, dc, dcb, divs, ds,
+    chk, clr, cmp, cmpa, cmpi, cmpm,
+    dbcc, dc, dcb, divs, divu, ds,
     end, eor, eori, equ, exg, ext,
     illegal,
     jmp, jsr, 
@@ -61,8 +61,8 @@ pub const Type = enum(u8) {
     unlk,
     // zig fmt: on
 
-    fn countMnemonics() usize {
-        return @typeInfo(@This()).@"enum".fields[@intFromEnum(@This().abcd)..].len;
+    pub fn countMnemonics() usize {
+        return @typeInfo(Type).@"enum".fields[@intFromEnum(Type.abcd)..].len;
     }
 
     pub fn mnemonicsAsKeyValues() [countMnemonics()]struct { [7]u8, Type } {

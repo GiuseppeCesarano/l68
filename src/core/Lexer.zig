@@ -5,7 +5,7 @@ const PerfectMap = @import("PerfectMap");
 
 const This = @This();
 
-pub const OutputQueue = @import("SwapQueue").create(token.Info, 50);
+pub const OutputQueue = @import("SwapQueue").create(token.Info, 80);
 
 text: []const u8,
 tokens: OutputQueue,
@@ -75,7 +75,7 @@ pub fn scan(this: *This) void {
         this.token_start = this.position;
         if (scan_map[this.consume()]) |scan_fn| {
             scan_fn(this) catch |err|
-                std.debug.print("Error Line:{}\n{s}:{s}\n", .{ this.line_number + 1, @errorName(err), this.text[this.token_start..this.position] });
+                std.io.getStdErr().writer().print("Error Line:{}\n{s}:{s}\n", .{ this.line_number + 1, @errorName(err), this.text[this.token_start..this.position] }) catch {};
         }
     }
 
@@ -247,9 +247,7 @@ fn math(_: *This) void {
 }
 
 fn addToken(this: *This, t: token.Type) void {
-    const ptr = this.tokens.addOne();
-    ptr.type = t;
-    ptr.relative_string = this.computeRelativeString();
+    this.tokens.produce(.{ .type = t, .data = undefined, .relative_string = this.computeRelativeString() });
 }
 
 inline fn addTokenWithData(this: *This, t: token.Type, data: token.Data) void {

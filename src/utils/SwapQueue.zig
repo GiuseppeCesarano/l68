@@ -20,21 +20,15 @@ pub fn create(T: type, size: comptime_int) type {
         }
 
         pub fn produce(this: *This, elm: T) void {
-            this.addOne().* = elm;
-        }
+            this.waitBuffersSwap();
+            const buffer = this.getBuffer(.producer);
 
-        pub fn addOne(this: *This) *T {
-            var buffer = this.getBuffer(.producer);
-
-            if (buffer.used == buffer.data.len) {
-                this.waitBuffersSwap();
-                buffer = this.getBuffer(.producer);
-            }
-
-            const position = &buffer.data[buffer.used];
+            buffer.data[buffer.used] = elm;
             buffer.used += 1;
 
-            return position;
+            if (buffer.used == buffer.data.len) {
+                this.is_ready_for_swap.store(true, .release);
+            }
         }
 
         pub fn consume(this: *This) !T {
@@ -64,7 +58,6 @@ pub fn create(T: type, size: comptime_int) type {
         }
 
         inline fn waitBuffersSwap(this: *This) void {
-            this.is_ready_for_swap.store(true, .monotonic);
             while (this.is_ready_for_swap.load(.acquire)) {
                 std.atomic.spinLoopHint();
             }

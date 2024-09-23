@@ -49,12 +49,14 @@ fn map_generics(comptime kvs_: anytype) type {
             var data = [_]Entry{.{ .key = 0, .value = undefined }} ** size;
 
             for (kvs) |kv| {
-                const key = encode(if (@typeInfo(@TypeOf(kv[0])) == .array) &kv[0] else kv[0]);
-                const i = hash(key, seed, size);
+                @setEvalBranchQuota(std.math.maxInt(u32));
+                const len = std.mem.indexOfScalar(u8, &kv[0], 0) orelse kv[0].len;
+                const encoded_key = encode(kv[0][0..len]);
+                const i = hash(encoded_key, seed, size);
                 if (data[i].key != 0) {
                     break;
                 }
-                data[i] = Entry{ .key = key, .value = kv[1] };
+                data[i] = Entry{ .key = encoded_key, .value = kv[1] };
             } else return data;
 
             return null;
@@ -76,8 +78,9 @@ fn map_generics(comptime kvs_: anytype) type {
             return value;
         }
 
-        pub fn hash(input: Key, comptime seed: u32, comptime len: usize) usize {
-            return std.hash.Murmur3_32.hashUint64WithSeed(@intCast(input), seed) % len;
+        pub inline fn hash(input: Key, comptime seed: u32, comptime len: usize) usize {
+            @setEvalBranchQuota(std.math.maxInt(u32));
+            return std.hash.Murmur3_32.hashUint64WithSeed(input, seed) % len;
         }
     };
 }
@@ -102,11 +105,6 @@ fn isKVTooBig(kvs: anytype) bool {
 fn isKVTypeInvalid(Kvs: type) bool {
     switch (@typeInfo(Kvs)) {
         .array => {},
-        .pointer => |info| {
-            if (info.size != .Slice) {
-                return true;
-            }
-        },
         else => return true,
     }
 
@@ -116,11 +114,6 @@ fn isKVTypeInvalid(Kvs: type) bool {
         .@"struct" => |info| {
             switch (@typeInfo(info.fields[0].type)) {
                 .array => {},
-                .pointer => {
-                    if (info.size != .Slice) {
-                        return true;
-                    }
-                },
                 else => return true,
             }
 
