@@ -17,7 +17,7 @@ pub fn create(comptime m_seed: u32, comptime size: usize, comptime key_value_pai
     };
 }
 
-pub fn bruteforceSeedAndSize(comptime kvs: anytype) struct { u64, usize } {
+pub fn createBruteforcing(comptime kvs: anytype) type {
     const map_generic = map_generics(kvs);
 
     @setEvalBranchQuota(std.math.maxInt(u32));
@@ -27,7 +27,7 @@ pub fn bruteforceSeedAndSize(comptime kvs: anytype) struct { u64, usize } {
         comptime var seed = 1500;
         inline while (seed < 3000) : (seed += 1) {
             if (map_generic.generate(seed, kvs.len * size, kvs)) |_| {
-                return .{ seed, kvs.len * size };
+                return create(seed, kvs.len * size, kvs);
             }
         }
     }

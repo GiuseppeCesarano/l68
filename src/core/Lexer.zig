@@ -1,11 +1,10 @@
 const std = @import("std");
-const token = @import("token");
 const fmt = @import("fmt");
 const PerfectMap = @import("PerfectMap");
-
 const This = @This();
+const Token = @import("asm").Token;
 
-pub const OutputQueue = @import("SwapQueue").create(token.Info, 80);
+pub const OutputQueue = @import("SwapQueue").create(Token, 80);
 
 text: []const u8,
 tokens: OutputQueue,
@@ -18,11 +17,21 @@ const InputError = error{
     Generic,
 };
 
-const mnemonic_map = mnmap: {
-    const mnemonics = token.Type.mnemonicsAsKeyValues();
-    const seed, const sz = PerfectMap.bruteforceSeedAndSize(mnemonics);
-    break :mnmap PerfectMap.create(seed, sz, mnemonics);
-};
+const mnemonic_map = PerfectMap.createBruteforcing(kvs: {
+    const Kv = struct { [7]u8, Token.Id };
+    var kvs = [_]Kv{.{ [_]u8{0} ** 7, undefined }} ** (@import("asm").mnemonics.len);
+
+    for (&kvs, 0..) |*kv, i| {
+        kv[1] = @enumFromInt(i);
+
+        const name = @tagName(kv[1]);
+        std.debug.assert(name.len < 8);
+
+        std.mem.copyForwards(u8, &kv[0], name);
+    }
+
+    break :kvs kvs;
+});
 
 const not_delimiter_map = set: {
     const len = std.math.maxInt(u8) + 1;
@@ -102,7 +111,7 @@ fn absoluteOrAddressingOrMath(this: *This) InputError!void {
 
     if (this.peek() != '(') {
         const number: u32 = @truncate(@as(u64, @bitCast(displacement_or_number)));
-        this.addTokenWithData(.absolute, .{ .Number = number });
+        this.addTokenWithData(.ABS, .{ .Number = number });
         return;
     }
 
@@ -110,7 +119,7 @@ fn absoluteOrAddressingOrMath(this: *This) InputError!void {
     this.skipWhiteSpaces();
 
     if (this.getRegister()) |address_register| {
-        if (address_register.type != .An) return InputError.Generic;
+        if (address_register.id != .An) return InputError.Generic;
         const displacement = std.math.cast(i16, displacement_or_number) orelse return InputError.Generic;
 
         switch (displacement) {
@@ -149,7 +158,7 @@ fn addressingOrMath(this: *This) InputError!void {
     this.skipWhiteSpaces();
 
     if (this.getRegister()) |address_register| {
-        if (address_register.type != .An) return InputError.Generic;
+        if (address_register.id != .An) return InputError.Generic;
         this.skipWhiteSpaces();
 
         switch (this.consume()) {
@@ -169,7 +178,7 @@ fn addressingOrMath(this: *This) InputError!void {
                 this.addTokenWithData(.@"(d,An,Xi)", .{ .ComplexAddressing = .{
                     .displacement = displacement,
                     .address_register = address_register.data.Register,
-                    .index_type = if (index_register.type == .An) .address else .data,
+                    .index_type = if (index_register.id == .An) .address else .data,
                     .index_register = index_register.data.Register,
                 } });
 
@@ -204,9 +213,9 @@ fn size(this: *This) InputError!void {
 
 fn immediate(this: *This) InputError!void {
     if (this.getNumber(i64)) |n| {
-        this.addTokenWithData(.immediate, .{ .Number = @truncate(@as(u64, @bitCast(n))) });
+        this.addTokenWithData(.imm, .{ .Number = @truncate(@as(u64, @bitCast(n))) });
     } else |err| switch (err) {
-        fmt.Error.InvalidCharacter => this.addToken(.immediate_label),
+        fmt.Error.InvalidCharacter => this.addToken(.imm), // TODO: This was immediate_label
         fmt.Error.Overflow => return InputError.Generic,
     }
 }
@@ -221,7 +230,7 @@ fn registerOrMnemonicOrLabel(this: *This) InputError!void {
     const str = this.text[this.token_start..this.position];
 
     if (registerFromString(str)) |reg| {
-        this.addTokenWithData(reg.type, reg.data);
+        this.addTokenWithData(reg.id, reg.data);
     } else if (mnemonic_map.get(str)) |mnemonic| {
         this.addToken(mnemonic);
     } else this.addToken(.label);
@@ -246,15 +255,15 @@ fn math(_: *This) void {
     @panic("math not supported");
 }
 
-fn addToken(this: *This, t: token.Type) void {
-    this.tokens.produce(.{ .type = t, .data = undefined, .relative_string = this.computeRelativeString() });
+fn addToken(this: *This, t: Token.Id) void {
+    this.tokens.produce(.{ .id = t, .data = undefined, .relative_string = this.computeRelativeString() });
 }
 
-inline fn addTokenWithData(this: *This, t: token.Type, data: token.Data) void {
-    this.tokens.produce(.{ .type = t, .data = data, .relative_string = this.computeRelativeString() });
+inline fn addTokenWithData(this: *This, t: Token.Id, data: Token.Data) void {
+    this.tokens.produce(.{ .id = t, .data = data, .relative_string = this.computeRelativeString() });
 }
 
-fn computeRelativeString(this: This) std.meta.FieldType(token.Info, .relative_string) {
+fn computeRelativeString(this: This) std.meta.FieldType(Token, .relative_string) {
     return .{ .offset = @intCast(this.token_start - this.line_start), .len = @intCast(this.position - this.token_start) };
 }
 
@@ -284,24 +293,24 @@ fn skipWhiteSpaces(this: *This) void {
     }
 }
 
-inline fn getRegister(this: *This) ?token.Info {
+inline fn getRegister(this: *This) ?Token {
     const start = this.position;
     this.skipUntilDelimiter();
 
     return registerFromString(this.text[start..this.position]);
 }
 
-fn registerFromString(str: []const u8) ?token.Info {
+fn registerFromString(str: []const u8) ?Token {
     if (str.len != 2) return null;
     const num = std.fmt.parseUnsigned(u3, str[1..], 10) catch return null;
 
     const t = switch (str[0] | 0x20) {
-        'd' => token.Type.Dn,
-        'a' => token.Type.An,
+        'd' => Token.Id.Dn,
+        'a' => Token.Id.An,
         else => return null,
     };
 
-    return .{ .type = t, .data = .{ .Register = num }, .relative_string = undefined };
+    return .{ .id = t, .data = .{ .Register = num }, .relative_string = undefined };
 }
 
 inline fn getNumber(this: *This, comptime T: type) fmt.Error!T {
