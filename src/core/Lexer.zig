@@ -242,7 +242,7 @@ fn stringOrChar(this: *This) InputError!void {
 
     switch (str.len) {
         0...2 => return InputError.Generic,
-        3 => this.addTokenWithData(.char, .{ .Char = str[1] }),
+        3 => this.addTokenWithData(.imm, .{ .Number = str[1] }),
         else => this.addToken(.string),
     }
 }

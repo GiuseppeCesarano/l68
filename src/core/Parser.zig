@@ -1,7 +1,6 @@
 const std = @import("std");
 const Lexer = @import("Lexer");
-const Token = @import("asm").Token;
-const AddressingMode = @import("asm").AddressingMode;
+const asmd = @import("asm");
 
 const This = @This();
 
@@ -13,9 +12,10 @@ const Handler = enum {
     comma,
     second_operand,
     new_line,
+    skip,
 };
 
-const HandlerFn = *const fn (*This, Token) void;
+const HandlerFn = *const fn (*This, asmd.Token) void;
 
 const handlers = [_]HandlerFn{
     label,
@@ -25,11 +25,14 @@ const handlers = [_]HandlerFn{
     comma,
     secondOperand,
     newLine,
+    skip,
 };
 
 lexer: *Lexer,
 handler: Handler = .label,
-// valid_addressing: AddressingMode = undefined,
+mnemn: *const asmd.Mnemonic = undefined,
+line_start: u32 = 0,
+line_number: u32 = 0,
 
 pub fn init(lexer: *Lexer) This {
     return .{ .lexer = lexer };
@@ -43,64 +46,72 @@ pub fn parse(this: *This) void {
     } else |_| {}
 }
 
-inline fn handle(this: *This, t: Token) void {
+inline fn handle(this: *This, t: asmd.Token) void {
     handlers[@intFromEnum(this.handler)](this, t);
 }
 
-fn label(this: *This, t: Token) void {
-    this.handler = .mnemonic;
-    switch (t.id) {
-        .label => {
-            // TODO: act on the label
-        },
-        .new_line => {
-            this.handler = .label;
-        },
-        else => {
-            this.handle(t);
-        },
-    }
-}
-
-fn mnemonic(this: *This, _: Token) void {
-    this.handler = .size;
-}
-
-fn size(this: *This, t: Token) void {
-    this.handler = .first_operand;
-    if (t.id != .B and t.id != .W and t.id != .L) {
-        // Setta size alla dafult
+fn label(this: *This, t: asmd.Token) void {
+    this.handler = if (t.id != .new_line) .mnemonic else .new_line;
+    if (t.id != .label) {
         this.handle(t);
     }
-    // Set size al t
 }
 
-fn firstOperand(this: *This, _: Token) void {
-    this.handler = if (true) .comma else .new_line;
-    if (false) {
-        @panic("First operand not valid");
+fn mnemonic(this: *This, t: asmd.Token) void {
+    this.handler = if (t.id != .dc and t.id != .equ) .size else .skip; // TODO: Remove the skip fn and handle dc and equ
+    this.mnemn = t.toMnemonicInstance() catch @panic(@tagName(t.id));
+}
+
+fn size(this: *This, t: asmd.Token) void {
+    this.handler = if (this.mnemn.hasOperand(.first)) .first_operand else .new_line;
+    if (t.toSize()) |s| {
+        if (!(this.mnemn.isSizeValid(s))) {
+            std.debug.print("line: {}, size invalid.\n{s}\n", .{ this.line_number, t.relative_string.toSliceWithOffset(this.lexer.text, this.line_start) });
+        }
+    } else |_| {
+        // TODO: Set size to default size;
+        this.handle(t);
     }
 }
 
-fn comma(this: *This, t: Token) void {
+fn firstOperand(this: *This, t: asmd.Token) void {
+    this.handler = if (this.mnemn.hasOperand(.second)) .comma else .new_line;
+
+    if (t.id == .label) return; // TODO: CHANGE
+    const addressing_mode = t.toAddressingMode() catch @panic("exected addressing mode");
+
+    if (!this.mnemn.isAddressingModeValid(addressing_mode, .first)) {
+        std.debug.print("line: {}, addressing mode invalid.\n{s}\n", .{ this.line_number, t.relative_string.toSliceWithOffset(this.lexer.text, this.line_start) });
+    }
+}
+
+fn comma(this: *This, t: asmd.Token) void {
     this.handler = .second_operand;
     if (t.id != .comma) {
-        @panic("not comma");
+        std.debug.print("line: {} not comma", .{this.line_number});
     }
 }
 
-fn secondOperand(this: *This, _: Token) void {
+fn secondOperand(this: *This, t: asmd.Token) void {
     this.handler = .new_line;
-    if (false) {
-        @panic("Second operand not valid");
+
+    if (t.id == .label) return; // TODO: CHANGE
+    const addressing_mode = t.toAddressingMode() catch @panic("exected addressing mode");
+
+    if (!this.mnemn.isAddressingModeValid(addressing_mode, .second)) {
+        std.debug.print("line: {}, addressing mode invalid.\n{s}\n", .{ this.line_number, t.relative_string.toSliceWithOffset(this.lexer.text, this.line_start) });
     }
 }
-fn newLine(this: *This, t: Token) void {
-    _ = t; // autofix
+
+fn newLine(this: *This, t: asmd.Token) void {
+    this.line_start = t.data.Number;
     this.handler = .label;
-    // if(!newLine){
-    // error
-    // }
-    //
-    // aggiorna poszione relatva
+    this.line_number += 1;
+    // TODO: better check
+}
+
+fn skip(this: *This, t: asmd.Token) void {
+    if (t.id == .new_line) {
+        this.handler = .label;
+    }
 }

@@ -30,7 +30,6 @@ pub const AddressingMode = enum {
 
 pub const Literal = enum {
     label,
-    char,
     string,
     comma,
     new_line,
@@ -45,7 +44,7 @@ pub const OperandPosition = enum {
     second,
 };
 
-const Mnemonic = struct {
+pub const Mnemonic = struct {
     const This = @This();
     pub const ValidSizes = std.bit_set.IntegerBitSet(3);
     pub const ValidAddressingModes = std.bit_set.IntegerBitSet(AddressingMode.count());
@@ -80,7 +79,7 @@ const Mnemonic = struct {
         return ret;
     }
 
-    pub fn isSizeValid(this: This, size: anytype) bool {
+    pub fn isSizeValid(this: This, size: Size) bool {
         const index = getSizeIndex(size);
         return this.valid_sizes.isSet(index);
     }
@@ -112,14 +111,12 @@ const Mnemonic = struct {
         };
     }
 
-    inline fn getSizeIndex(size: anytype) usize {
-        const S = @TypeOf(size);
-        return @intFromEnum(if (S == Size) size else size.toSizeEnum());
+    inline fn getSizeIndex(size: Size) usize {
+        return @intFromEnum(size);
     }
 
     inline fn getModeIndex(mode: anytype) usize {
-        const M = @TypeOf(mode);
-        return @intFromEnum(if (M == AddressingMode) mode else mode.toModeEnum());
+        return @intFromEnum(mode);
     }
 };
 
@@ -342,7 +339,7 @@ pub const mnemonics = [_]Mnemonic{
         [_]AddressingMode{ .Dn },
         [_]AddressingMode{ .ABS }),
     Mnemonic.create("dc", //TODO: check asim manual 
-        [_]Size{ .W }, 
+        [_]Size{ .B, .W, .L }, 
         [_]AddressingMode{ .Dn },
         [_]AddressingMode{ .ABS }),
     Mnemonic.create("divs", //TODO: explore whath longword/word means in the manual
@@ -353,10 +350,14 @@ pub const mnemonics = [_]Mnemonic{
         [_]Size{ .W, .L }, 
         [_]AddressingMode{ .Dn, .@"(An)", .@"(An)+", .@"-(An)", .@"(d,An)", .@"(d,An,Xi)", .ABS,.@"(d,PC)", .@"(d,PC,Xn)", .imm},
         [_]AddressingMode{ .Dn }),
-    Mnemonic.create("ds", //TODO: check asim manual 
-        [_]Size{ .W }, 
-        [_]AddressingMode{ .Dn },
-        [_]AddressingMode{ .ABS }),
+    Mnemonic.create("ds", 
+        [_]Size{ .B, .W, .L }, 
+        [_]AddressingMode{ .ABS, },
+        [_]AddressingMode{}),
+    Mnemonic.create("end", 
+        [_]Size{}, 
+        [_]AddressingMode{},
+        [_]AddressingMode{}),
     Mnemonic.create("eor", 
         [_]Size{ .B, .W, .L }, 
         [_]AddressingMode{ .Dn },
@@ -367,8 +368,8 @@ pub const mnemonics = [_]Mnemonic{
         [_]AddressingMode{ .Dn, .@"(An)", .@"(An)+", .@"-(An)",.@"(d,An)", .@"(d,An,Xi)", .ABS, }),
     Mnemonic.create("equ", //TODO: check asim manual
         [_]Size{ .B, .W, .L }, 
-        [_]AddressingMode{ .imm },
-        [_]AddressingMode{ .Dn, .@"(An)", .@"(An)+", .@"-(An)",.@"(d,An)", .@"(d,An,Xi)", .ABS, }),
+        [_]AddressingMode{ .imm, .ABS },
+        [_]AddressingMode{}),
     Mnemonic.create("exg", // TODO: if first op is Dn second op should be Dn, same for An
         [_]Size{ .L }, 
         [_]AddressingMode{ .Dn, .An }, 
@@ -457,6 +458,10 @@ pub const mnemonics = [_]Mnemonic{
         [_]Size{ .B, .W, .L }, 
         [_]AddressingMode{ .Dn, .@"(An)", .@"(An)+", .@"-(An)", .@"(d,An)", .@"(d,An,Xi)", .ABS, .@"(d,PC)", .@"(d,PC,Xn)", .imm },
         [_]AddressingMode{ .Dn, .@"(An)", .@"(An)+", .@"-(An)", .@"(d,An)", .@"(d,An,Xi)", .ABS, }),
+    Mnemonic.create("org", 
+        [_]Size{}, 
+        [_]AddressingMode{ .ABS, },
+        [_]AddressingMode{}),
     Mnemonic.create("ori", //TODO: ccr sr
         [_]Size{ .B, .W, .L }, 
         [_]AddressingMode{ .imm },
@@ -624,10 +629,11 @@ pub const Token = packed struct {
 
         var len = mnemonics.len;
         while (index < len) : (index += 1) {
-            fields[index] = EnumField{ .name = &mnemonics[index].str, .value = index };
+            const end = std.mem.indexOfScalar(u8, &mnemonics[index].str, 0) orelse 7;
+            fields[index] = EnumField{ .name = @ptrCast(mnemonics[index].str[0 .. end + 1]), .value = index };
         }
 
-        for ([_]type{ Size, Literal, AddressingMode }) |Current| {
+        for ([_]type{ Size, AddressingMode, Literal }) |Current| {
             const current_fields = @typeInfo(Current).@"enum".fields;
             const offset = len;
             len += current_fields.len;
@@ -656,11 +662,43 @@ pub const Token = packed struct {
         },
     };
 
+    pub const ConversionError = error{
+        NotMnemonic,
+        NotSize,
+        NotAddressingMode,
+    };
+
     id: Id,
     data: Data,
     relative_string: @import("compact").StringView,
 
+    pub fn toMnemonicInstance(this: @This()) ConversionError!*const Mnemonic {
+        const index = @intFromEnum(this.id);
+        return if (index < mnemonics.len) &mnemonics[index] else ConversionError.NotMnemonic;
+    }
+
+    pub fn toSize(this: @This()) ConversionError!Size {
+        const index = @intFromEnum(this.id);
+        const lower_bound = mnemonics.len;
+        const upper_bound = lower_bound + Size.count();
+        return if (index >= lower_bound and index < upper_bound) @enumFromInt(@intFromEnum(this.id) - lower_bound) else ConversionError.NotSize;
+    }
+
+    pub fn toAddressingMode(this: @This()) ConversionError!AddressingMode {
+        const index = @intFromEnum(this.id);
+        const lower_bound = mnemonics.len + Size.count();
+        const upper_bound = lower_bound + AddressingMode.count();
+        return if (index >= lower_bound and index < upper_bound) @enumFromInt(@intFromEnum(this.id) - lower_bound) else ConversionError.NotAddressingMode;
+    }
+
     test "Token.Info's size" {
         try std.testing.expectEqual(@bitSizeOf(@This()), 64);
     }
+};
+
+pub const Statement = struct {
+    label: ?[]const u8,
+    mnemonic: *const Mnemonic,
+    size: ?Size,
+    operand: [2]?AddressingMode,
 };
